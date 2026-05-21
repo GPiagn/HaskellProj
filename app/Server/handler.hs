@@ -1,3 +1,7 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Server.Handler where
 
 import Data.Proxy
@@ -18,3 +22,9 @@ server = handleHello
 
 app :: Application
 app = serve (Proxy :: Proxy API) server
+
+--server :: Connection -> Server API 
+--server conn = handlerHello 
+
+--app :: Connection -> Application 
+--app conn = addCorsHeader (serve (Proxy @API) (server conn))
