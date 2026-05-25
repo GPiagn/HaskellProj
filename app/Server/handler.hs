@@ -1,30 +1,70 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Server.Handler where
 
-import Data.Proxy
-import Network.Wai
-import Servant.API.Sub
+import Data.Proxy                  (Proxy (..))
+import Network.Wai                 (Application)
+import Network.Wai.Middleware.Cors
 import Servant.API
 import Servant.Server
+import Data.Aeson                  (Value, object, (.=))
+import Database.PostgreSQL.Simple  (Connection)
 
---ROTAS DO SERVANT
-type API = "hello" :> Get '[PlainText] String
+-- Definição de todas as rotas da API
+type API =
+       "ping"            :> Get '[JSON] Value
+  :<|> "exemplares"      :> Get '[JSON] Value
+  :<|> "inventario"      :> Get '[JSON] Value
+  :<|> "nao-encontrados" :> Get '[JSON] Value
+  :<|> "dashboard"       :> "totais" :> Get '[JSON] Value
 
---handler para a rota "hello"
-handleHello :: Handler String
-handleHello = pure "Hello, World!"
+-- Server recebe a conexão e repassa para cada handler
+server :: Connection -> Server API
+server conn =
+       handlePing
+  :<|> handleExemplares conn
+  :<|> handleInventario conn
+  :<|> handleNaoEncontrados conn
+  :<|> handleDashboard conn
 
-server :: Server API
-server = handleHello
+handlePing :: Handler Value
+handlePing = return $ object
+  [ "status" .= ("ok"         :: String)
+  , "msg"    .= ("API online" :: String)
+  ]
 
-app :: Application
-app = serve (Proxy :: Proxy API) server
+-- Placeholders — recebem conn mas ainda não usam (fase 2)
+handleExemplares :: Connection -> Handler Value
+handleExemplares _conn = return $ object
+  [ "data"  .= ([] :: [String])
+  , "total" .= (0  :: Int)
+  ]
 
---server :: Connection -> Server API 
---server conn = handlerHello 
+handleInventario :: Connection -> Handler Value
+handleInventario _conn = return $ object
+  [ "data" .= ([] :: [String]) ]
 
---app :: Connection -> Application 
---app conn = addCorsHeader (serve (Proxy @API) (server conn))
+handleNaoEncontrados :: Connection -> Handler Value
+handleNaoEncontrados _conn = return $ object
+  [ "data" .= ([] :: [String]) ]
+
+handleDashboard :: Connection -> Handler Value
+handleDashboard _conn = return $ object
+  [ "encontrados"      .= (0 :: Int)
+  , "naoEncontrados"   .= (0 :: Int)
+  , "naoInventariados" .= (0 :: Int)
+  ]
+
+-- CORS
+corsPolicy :: CorsResourcePolicy
+corsPolicy = simpleCorsResourcePolicy
+  { corsOrigins        = Nothing
+  , corsMethods        = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  , corsRequestHeaders = ["Content-Type", "Authorization"]
+  }
+
+-- App também recebe a conexão
+app :: Connection -> Application
+app conn = cors (const (Just corsPolicy)) (serve (Proxy @API) (server conn))
