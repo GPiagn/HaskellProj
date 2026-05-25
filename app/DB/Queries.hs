@@ -2,17 +2,22 @@
 module DB.Queries where
 
 import Database.PostgreSQL.Simple
-import Data.Int (Int64)
+import Database.PostgreSQL.Simple.FromRow (FromRow, field, fromRow)
+import Data.Int  (Int64)
+import Data.Text (Text)
+import Data.Time (Day)
 import Types.Exemplar
 
--- Listar todos os exemplares
+-- ============================================================
+-- Queries de Exemplares (CRUD)
+-- ============================================================
+
 listExemplares :: Connection -> IO [Exemplar]
 listExemplares conn =
   query_ conn
     "SELECT id, codigo, titulo, autor, classificacao, tipo_obra, situacao_sistema \
     \ FROM exemplares ORDER BY id"
 
--- Buscar exemplar por id
 getExemplarById :: Connection -> Int -> IO (Maybe Exemplar)
 getExemplarById conn eid = do
   results <- query conn
@@ -23,7 +28,6 @@ getExemplarById conn eid = do
     [ex] -> return (Just ex)
     _    -> return Nothing
 
--- Criar exemplar e retornar o id gerado
 insertExemplar :: Connection -> ExemplarInput -> IO (Maybe Int)
 insertExemplar conn input = do
   results <- query conn
@@ -34,7 +38,6 @@ insertExemplar conn input = do
     [Only newId] -> return (Just newId)
     _            -> return Nothing
 
--- Atualizar exemplar existente (retorna número de linhas afetadas)
 updateExemplar :: Connection -> Int -> ExemplarInput -> IO Int64
 updateExemplar conn eid (ExemplarInput c t a cl to) =
   execute conn
@@ -43,7 +46,78 @@ updateExemplar conn eid (ExemplarInput c t a cl to) =
     \ WHERE id = ?"
     (c, t, a, cl, to, eid)
 
--- Deletar exemplar (retorna número de linhas afetadas)
 deleteExemplar :: Connection -> Int -> IO Int64
 deleteExemplar conn eid =
   execute conn "DELETE FROM exemplares WHERE id = ?" (Only eid)
+
+-- ============================================================
+-- Queries de Inventário
+-- ============================================================
+
+-- Registra um inventário. Se já existir registro para esse exemplar no
+-- ano atual, atualiza (UPSERT) — graças à UNIQUE constraint do schema.
+registrarInventario :: Connection -> Int -> Text -> Maybe Text -> IO Int64
+registrarInventario conn eid resultado obs =
+  execute conn
+    "INSERT INTO inventario (exemplar_id, resultado, observacao) \
+    \ VALUES (?, ?, ?) \
+    \ ON CONFLICT (exemplar_id, ano_inventario) \
+    \ DO UPDATE SET resultado = EXCLUDED.resultado, observacao = EXCLUDED.observacao, registrado_em = NOW()"
+    (eid, resultado, obs)
+
+-- ============================================================
+-- Tipo auxiliar e queries para "não encontrados"
+-- ============================================================
+
+-- Linha bruta vinda do banco para construir um ExemplarNaoEncontrado.
+-- Pode ter empréstimo associado (Just) ou não (Nothing).
+data NaoEncontradoRow = NaoEncontradoRow
+  { rowExemplarId  :: Int
+  , rowCodigo      :: Text
+  , rowTitulo      :: Text
+  , rowObservacao  :: Maybe Text
+  , rowNomePessoa  :: Maybe Text
+  , rowDataEmp     :: Maybe Day
+  , rowDataPrev    :: Maybe Day
+  }
+
+instance FromRow NaoEncontradoRow where
+  fromRow = NaoEncontradoRow
+    <$> field <*> field <*> field <*> field
+    <*> field <*> field <*> field
+
+-- Lista os exemplares "não encontrados" no ano atual, fazendo LEFT JOIN
+-- com empréstimos para trazer o motivo automático quando aplicável.
+listNaoEncontrados :: Connection -> IO [NaoEncontradoRow]
+listNaoEncontrados conn =
+  query_ conn
+    "SELECT e.id, e.codigo, e.titulo, i.observacao, \
+    \        emp.nome_pessoa, emp.data_emprestimo, emp.data_prevista \
+    \ FROM inventario i \
+    \ INNER JOIN exemplares e ON e.id = i.exemplar_id \
+    \ LEFT JOIN LATERAL ( \
+    \   SELECT nome_pessoa, data_emprestimo, data_prevista \
+    \   FROM emprestimos \
+    \   WHERE exemplar_id = e.id \
+    \   ORDER BY data_emprestimo DESC LIMIT 1 \
+    \ ) emp ON TRUE \
+    \ WHERE i.resultado = 'nao_encontrado' \
+    \   AND i.ano_inventario = EXTRACT(YEAR FROM NOW()) \
+    \ ORDER BY e.id"
+
+-- ============================================================
+-- Dashboard
+-- ============================================================
+
+contarTotais :: Connection -> IO (Int, Int, Int, Int)
+contarTotais conn = do
+  [Only total]      <- query_ conn "SELECT COUNT(*) FROM exemplares"
+  [Only encontrados] <- query_ conn
+    "SELECT COUNT(*) FROM inventario \
+    \ WHERE resultado = 'encontrado' AND ano_inventario = EXTRACT(YEAR FROM NOW())"
+  [Only naoEnc]     <- query_ conn
+    "SELECT COUNT(*) FROM inventario \
+    \ WHERE resultado = 'nao_encontrado' AND ano_inventario = EXTRACT(YEAR FROM NOW())"
+  [Only atrasados]  <- query_ conn
+    "SELECT COUNT(*) FROM emprestimos WHERE data_prevista < CURRENT_DATE"
+  return (total, encontrados, naoEnc, atrasados)

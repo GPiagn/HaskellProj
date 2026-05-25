@@ -21,7 +21,7 @@ executable HaskellProj
         DB.Queries
         Types.Exemplar
         Types.Inventario
-        --Business.StatusCalc
+        Business.StatusCalc
     build-depends:
         base ^>=4.18.3.0,
         servant,

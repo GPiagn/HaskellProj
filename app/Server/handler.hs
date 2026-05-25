@@ -12,83 +12,153 @@ import Network.Wai.Middleware.Cors
 import Servant.API
 import Servant.Server
 import Data.Aeson                   (Value, object, (.=))
+import Data.Time                    (Day, getCurrentTime, utctDay)
 import Database.PostgreSQL.Simple   (Connection)
 
 import Types.Exemplar
-import DB.Queries
+import qualified DB.Queries as DB
+import Business.StatusCalc
 
--- Definição das rotas da API
+-- ============================================================
+-- Definição das rotas
+-- ============================================================
+
 type API =
-       "ping"        :> Get '[JSON] Value
-  :<|> "exemplares"  :> Get '[JSON] [Exemplar]
-  :<|> "exemplares"  :> Capture "id" Int :> Get '[JSON] Exemplar
-  :<|> "exemplares"  :> ReqBody '[JSON] ExemplarInput :> Post '[JSON] Value
-  :<|> "exemplares"  :> Capture "id" Int :> ReqBody '[JSON] ExemplarInput :> Put '[JSON] Value
-  :<|> "exemplares"  :> Capture "id" Int :> Delete '[JSON] Value
+  -- Exemplares (CRUD)
+       "exemplares" :> Get '[JSON] [Exemplar]
+  :<|> "exemplares" :> Capture "id" Int :> Get '[JSON] Exemplar
+  :<|> "exemplares" :> ReqBody '[JSON] ExemplarInput :> Post '[JSON] Value
+  :<|> "exemplares" :> Capture "id" Int :> ReqBody '[JSON] ExemplarInput :> Put '[JSON] Value
+  :<|> "exemplares" :> Capture "id" Int :> Delete '[JSON] Value
+  -- Inventário e regra de negócio
+  :<|> "inventario" :> ReqBody '[JSON] InventarioInput :> Post '[JSON] Value
+  :<|> "nao-encontrados" :> Get '[JSON] [ExemplarNaoEncontrado]
+  :<|> "dashboard" :> "totais" :> Get '[JSON] DashboardTotais
+  -- Saúde
+  :<|> "ping" :> Get '[JSON] Value
 
--- Server recebe a conexão e repassa para cada handler
 server :: Connection -> Server API
 server conn =
-       handlePing
-  :<|> handleListExemplares  conn
-  :<|> handleGetExemplar     conn
-  :<|> handleCreateExemplar  conn
-  :<|> handleUpdateExemplar  conn
-  :<|> handleDeleteExemplar  conn
+       handleListExemplares   conn
+  :<|> handleGetExemplar      conn
+  :<|> handleCreateExemplar   conn
+  :<|> handleUpdateExemplar   conn
+  :<|> handleDeleteExemplar   conn
+  :<|> handleRegistrarInventario conn
+  :<|> handleNaoEncontrados   conn
+  :<|> handleDashboard        conn
+  :<|> handlePing
 
--- GET /ping
+-- ============================================================
+-- Handlers — Exemplares
+-- ============================================================
+
+handleListExemplares :: Connection -> Handler [Exemplar]
+handleListExemplares conn = liftIO (DB.listExemplares conn)
+
+handleGetExemplar :: Connection -> Int -> Handler Exemplar
+handleGetExemplar conn eid = do
+  result <- liftIO (DB.getExemplarById conn eid)
+  case result of
+    Just ex -> return ex
+    Nothing -> throwError err404 { errBody = "Exemplar não encontrado" }
+
+handleCreateExemplar :: Connection -> ExemplarInput -> Handler Value
+handleCreateExemplar conn input = do
+  result <- liftIO (DB.insertExemplar conn input)
+  case result of
+    Just newId -> return $ object
+      [ "id"  .= newId
+      , "msg" .= ("Exemplar criado com sucesso" :: String)
+      ]
+    Nothing -> throwError err500 { errBody = "Erro ao criar exemplar" }
+
+handleUpdateExemplar :: Connection -> Int -> ExemplarInput -> Handler Value
+handleUpdateExemplar conn eid input = do
+  affected <- liftIO (DB.updateExemplar conn eid input)
+  if affected > 0
+    then return $ object
+      [ "id"  .= eid
+      , "msg" .= ("Exemplar atualizado com sucesso" :: String)
+      ]
+    else throwError err404 { errBody = "Exemplar não encontrado" }
+
+handleDeleteExemplar :: Connection -> Int -> Handler Value
+handleDeleteExemplar conn eid = do
+  affected <- liftIO (DB.deleteExemplar conn eid)
+  if affected > 0
+    then return $ object
+      [ "id"  .= eid
+      , "msg" .= ("Exemplar removido com sucesso" :: String)
+      ]
+    else throwError err404 { errBody = "Exemplar não encontrado" }
+
+-- ============================================================
+-- Handlers — Inventário (regra de negócio)
+-- ============================================================
+
+handleRegistrarInventario :: Connection -> InventarioInput -> Handler Value
+handleRegistrarInventario conn (InventarioInput eid resultado obs) =
+  case validaInventario resultado obs of
+    Left erro -> throwError err400 { errBody = "Erro de validação" }
+    Right ()  -> do
+      affected <- liftIO (DB.registrarInventario conn eid resultado obs)
+      return $ object
+        [ "exemplarId" .= eid
+        , "resultado"  .= resultado
+        , "msg"        .= ("Inventário registrado com sucesso" :: String)
+        , "linhas"     .= affected
+        ]
+
+handleNaoEncontrados :: Connection -> Handler [ExemplarNaoEncontrado]
+handleNaoEncontrados conn = do
+  rows <- liftIO (DB.listNaoEncontrados conn)
+  hoje <- liftIO (utctDay <$> getCurrentTime)
+  return (map (toNaoEncontrado hoje) rows)
+
+-- Função pura que converte uma linha do banco no tipo de domínio.
+-- Aqui é onde a lógica de negócio aparece: se tem empréstimo associado,
+-- monta o motivo "Emprestado" automaticamente com cálculo de atraso.
+toNaoEncontrado :: Day -> DB.NaoEncontradoRow -> ExemplarNaoEncontrado
+toNaoEncontrado hoje row =
+  ExemplarNaoEncontrado
+    { neExemplarId = DB.rowExemplarId row
+    , neCodigo     = DB.rowCodigo row
+    , neTitulo     = DB.rowTitulo row
+    , neMotivo     = decidirMotivo
+    }
+  where
+    decidirMotivo = case (DB.rowNomePessoa row, DB.rowDataEmp row, DB.rowDataPrev row) of
+      (Just nome, Just dEmp, Just dPrev) ->
+        montaMotivoEmprestado hoje nome dEmp dPrev
+      _ ->
+        OutroMotivo (maybe "Motivo não informado" id (DB.rowObservacao row))
+
+handleDashboard :: Connection -> Handler DashboardTotais
+handleDashboard conn = do
+  (total, enc, naoEnc, atrasados) <- liftIO (DB.contarTotais conn)
+  return DashboardTotais
+    { totalExemplares           = total
+    , totalEncontrados          = enc
+    , totalNaoEncontrados       = naoEnc
+    , totalNaoInventariados     = total - enc - naoEnc
+    , totalEmprestimosAtrasados = atrasados
+    }
+
+-- ============================================================
+-- Healthcheck
+-- ============================================================
+
 handlePing :: Handler Value
 handlePing = return $ object
   [ "status" .= ("ok"         :: String)
   , "msg"    .= ("API online" :: String)
   ]
 
--- GET /exemplares — listar todos
-handleListExemplares :: Connection -> Handler [Exemplar]
-handleListExemplares conn = liftIO (listExemplares conn)
+-- ============================================================
+-- CORS + app
+-- ============================================================
 
--- GET /exemplares/:id — buscar um exemplar
-handleGetExemplar :: Connection -> Int -> Handler Exemplar
-handleGetExemplar conn eid = do
-  result <- liftIO (getExemplarById conn eid)
-  case result of
-    Just ex -> return ex
-    Nothing -> throwError err404 { errBody = "Exemplar não encontrado" }
-
--- POST /exemplares — criar novo
-handleCreateExemplar :: Connection -> ExemplarInput -> Handler Value
-handleCreateExemplar conn input = do
-  result <- liftIO (insertExemplar conn input)
-  case result of
-    Just newId -> return $ object
-      [ "id" .= newId
-      , "msg" .= ("Exemplar criado com sucesso" :: String)
-      ]
-    Nothing -> throwError err500 { errBody = "Erro ao criar exemplar" }
-
--- PUT /exemplares/:id — atualizar
-handleUpdateExemplar :: Connection -> Int -> ExemplarInput -> Handler Value
-handleUpdateExemplar conn eid input = do
-  affected <- liftIO (updateExemplar conn eid input)
-  if affected > 0
-    then return $ object
-      [ "id" .= eid
-      , "msg" .= ("Exemplar atualizado com sucesso" :: String)
-      ]
-    else throwError err404 { errBody = "Exemplar não encontrado" }
-
--- DELETE /exemplares/:id — remover
-handleDeleteExemplar :: Connection -> Int -> Handler Value
-handleDeleteExemplar conn eid = do
-  affected <- liftIO (deleteExemplar conn eid)
-  if affected > 0
-    then return $ object
-      [ "id" .= eid
-      , "msg" .= ("Exemplar removido com sucesso" :: String)
-      ]
-    else throwError err404 { errBody = "Exemplar não encontrado" }
-
--- CORS
 corsPolicy :: CorsResourcePolicy
 corsPolicy = simpleCorsResourcePolicy
   { corsOrigins        = Nothing
