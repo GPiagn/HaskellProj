@@ -179,14 +179,15 @@ Quando um exemplar não encontrado tem empréstimo ativo, o backend monta automa
 
 - [x] **Fase 1** — Setup base com Servant + endpoint `/ping`
 - [x] **Fase 2** — CRUD completo de exemplares com PostgreSQL
-- [ ] **Fase 3** — Regras de negócio: inventário, não-encontrados, dashboard
+- [x] **Fase 3** — Regras de negócio: inventário, não-encontrados, dashboard
 - [ ] **Fase 4** — Frontend em React + Tailwind
 - [ ] **Fase 5** — Deploy no Render
 
 ---
 
-## 👩‍💻 Autora
+## 👩‍💻 Autores
 
 **Glória Pianheri** — Estágio em biblioteca + estudante de TI na FATEC.
+**Murilo Burato** — Estudante de TI na FATEC.
 
 Projeto da disciplina de Programação Funcional / Haskell.
