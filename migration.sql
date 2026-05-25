@@ -27,3 +27,15 @@ CREATE TABLE IF NOT EXISTS inventario (
     registrado_em   TIMESTAMP   DEFAULT NOW(),
     UNIQUE (exemplar_id, ano_inventario)
 );
+
+INSERT INTO exemplares (codigo, titulo, autor, classificacao, tipo_obra)
+SELECT '1455', 'Neuroanatomia funcional', 'Machado', '611.8 M1491n', 'Livro'
+WHERE NOT EXISTS (SELECT 1 FROM exemplares WHERE codigo = '1455');
+
+INSERT INTO exemplares (codigo, titulo, autor, classificacao, tipo_obra)
+SELECT '1514', 'Neurociencia basica', 'Guyton', '612.8 G992n', 'Livro'
+WHERE NOT EXISTS (SELECT 1 FROM exemplares WHERE codigo = '1514');
+
+INSERT INTO exemplares (codigo, titulo, autor, classificacao, tipo_obra)
+SELECT '6299', 'Controle motor', 'Shumway-Cook', '612.7 S5626c', 'Livro'
+WHERE NOT EXISTS (SELECT 1 FROM exemplares WHERE codigo = '6299');

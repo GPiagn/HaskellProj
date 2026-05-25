@@ -1,6 +1,6 @@
 module Business.StatusCalc where
 
-import Data.Text (Text, pack)
+{-import Data.Text (Text, pack)
 import Data.Time     (Day, diffDays)
 import Types.Exemplar
 
@@ -20,3 +20,4 @@ obsEmprestado hoje dataEmp dataPrev nome =
     , dataPrevista   = dataPrev
     , situacao       = calcSituacao hoje dataPrev
     }
+-}
