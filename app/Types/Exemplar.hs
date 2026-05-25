@@ -104,3 +104,15 @@ data DashboardTotais = DashboardTotais
 
 instance ToJSON DashboardTotais
 instance FromJSON DashboardTotais
+
+-- Payload para PATCH (atualização parcial — todos os campos opcionais)
+data ExemplarPatch = ExemplarPatch
+  { patCodigo        :: Maybe Text
+  , patTitulo        :: Maybe Text
+  , patAutor         :: Maybe Text
+  , patClassificacao :: Maybe Text
+  , patTipoObra      :: Maybe Text
+  } deriving (Show, Generic)
+
+instance ToJSON ExemplarPatch
+instance FromJSON ExemplarPatch

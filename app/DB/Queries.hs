@@ -121,3 +121,17 @@ contarTotais conn = do
   [Only atrasados]  <- query_ conn
     "SELECT COUNT(*) FROM emprestimos WHERE data_prevista < CURRENT_DATE"
   return (total, encontrados, naoEnc, atrasados)
+
+
+-- Atualização parcial: campos NULL no input mantêm o valor antigo
+patchExemplar :: Connection -> Int -> ExemplarPatch -> IO Int64
+patchExemplar conn eid (ExemplarPatch c t a cl to) =
+  execute conn
+    "UPDATE exemplares \
+    \ SET codigo        = COALESCE(?, codigo), \
+    \     titulo        = COALESCE(?, titulo), \
+    \     autor         = COALESCE(?, autor), \
+    \     classificacao = COALESCE(?, classificacao), \
+    \     tipo_obra     = COALESCE(?, tipo_obra) \
+    \ WHERE id = ?"
+    (c, t, a, cl, to, eid)

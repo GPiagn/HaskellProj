@@ -29,6 +29,7 @@ type API =
   :<|> "exemplares" :> Capture "id" Int :> Get '[JSON] Exemplar
   :<|> "exemplares" :> ReqBody '[JSON] ExemplarInput :> Post '[JSON] Value
   :<|> "exemplares" :> Capture "id" Int :> ReqBody '[JSON] ExemplarInput :> Put '[JSON] Value
+  :<|> "exemplares" :> Capture "id" Int :> ReqBody '[JSON] ExemplarPatch :> Patch '[JSON] Value
   :<|> "exemplares" :> Capture "id" Int :> Delete '[JSON] Value
   -- Inventário e regra de negócio
   :<|> "inventario" :> ReqBody '[JSON] InventarioInput :> Post '[JSON] Value
@@ -43,6 +44,7 @@ server conn =
   :<|> handleGetExemplar      conn
   :<|> handleCreateExemplar   conn
   :<|> handleUpdateExemplar   conn
+  :<|> handlePatchExemplar    conn
   :<|> handleDeleteExemplar   conn
   :<|> handleRegistrarInventario conn
   :<|> handleNaoEncontrados   conn
@@ -90,6 +92,16 @@ handleDeleteExemplar conn eid = do
     then return $ object
       [ "id"  .= eid
       , "msg" .= ("Exemplar removido com sucesso" :: String)
+      ]
+    else throwError err404 { errBody = "Exemplar não encontrado" }
+
+handlePatchExemplar :: Connection -> Int -> ExemplarPatch -> Handler Value
+handlePatchExemplar conn eid input = do
+  affected <- liftIO (DB.patchExemplar conn eid input)
+  if affected > 0
+    then return $ object
+      [ "id"  .= eid
+      , "msg" .= ("Exemplar atualizado parcialmente com sucesso" :: String)
       ]
     else throwError err404 { errBody = "Exemplar não encontrado" }
 
