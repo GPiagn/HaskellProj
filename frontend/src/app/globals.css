@@ -1,0 +1,328 @@
+/* Fonts are loaded via next/font/google in layout.tsx */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── UNIFESP Light palette — verde institucional (OKLCH h≈150) ─── */
+:root {
+  /* Surfaces — tintadas com verde UNIFESP */
+  --background:       oklch(0.986 0.005 150);
+  --surface:          oklch(0.973 0.008 150);
+  --surface-raised:   oklch(0.991 0.003 150);
+
+  --border:           oklch(0.87  0.012 150);
+  --border-subtle:    oklch(0.91  0.008 150);
+
+  --text-primary:     oklch(0.15  0.018 150);
+  --text-secondary:   oklch(0.42  0.014 150);
+  --text-muted:       oklch(0.60  0.008 150);
+  --text-disabled:    oklch(0.72  0.005 150);
+
+  /* Verde escuro institucional UNIFESP ≈ Pantone 350 C */
+  --brand:            oklch(0.32  0.12  150);
+  --brand-hover:      oklch(0.39  0.12  150);
+  --brand-subtle:     oklch(0.93  0.05  150);
+  --brand-subtle-hover: oklch(0.88 0.07 150);
+  --brand-fg:         oklch(0.98  0.003 150);
+
+  /* Gold — complementar ao verde institucional */
+  --gold:             oklch(0.72  0.16   80);
+  --gold-subtle:      oklch(0.96  0.05   80);
+
+  /* Sucesso: esmeralda-teal (distinto do brand) */
+  --success:          oklch(0.50  0.13  163);
+  --success-subtle:   oklch(0.95  0.04  163);
+  --success-fg:       oklch(0.98  0.004 163);
+
+  --warning:          oklch(0.62  0.17   72);
+  --warning-subtle:   oklch(0.97  0.05   72);
+  --warning-fg:       oklch(0.20  0.05   72);
+
+  --danger:           oklch(0.52  0.20   18);
+  --danger-subtle:    oklch(0.96  0.04   18);
+  --danger-fg:        oklch(0.98  0.005  18);
+
+  /* Sidebar escura institucional — igual sistemas universitários */
+  --sidebar-bg:              oklch(0.22  0.09  150);
+  --sidebar-border:          oklch(0.29  0.09  150);
+  --sidebar-item-text:       oklch(0.81  0.04  145);
+  --sidebar-item-hover-bg:   oklch(0.30  0.10  150);
+  --sidebar-item-hover-text: oklch(0.95  0.02  145);
+  --sidebar-item-active-bg:  oklch(0.37  0.12  150);
+  --sidebar-item-active-text:oklch(0.98  0.02  145);
+  --sidebar-label-text:      oklch(0.48  0.05  145);
+  --sidebar-logo-text:       oklch(0.97  0.02  145);
+  --sidebar-logo-sub:        oklch(0.64  0.07  145);
+  --sidebar-w:        240px;
+  --sidebar-w-sm:      64px;
+}
+
+/* ─── UNIFESP Dark palette — verde escuro elegante ─── */
+.dark {
+  --background:       oklch(0.11  0.016 150);
+  --surface:          oklch(0.16  0.018 150);
+  --surface-raised:   oklch(0.21  0.018 150);
+
+  --border:           oklch(0.27  0.020 150);
+  --border-subtle:    oklch(0.22  0.016 150);
+
+  --text-primary:     oklch(0.95  0.005 145);
+  --text-secondary:   oklch(0.70  0.013 145);
+  --text-muted:       oklch(0.50  0.010 145);
+  --text-disabled:    oklch(0.35  0.008 145);
+
+  --brand:            oklch(0.60  0.14  150);
+  --brand-hover:      oklch(0.66  0.14  150);
+  --brand-subtle:     oklch(0.20  0.06  150);
+  --brand-subtle-hover: oklch(0.25 0.07 150);
+  --brand-fg:         oklch(0.10  0.02  150);
+
+  --gold:             oklch(0.78  0.16   80);
+  --gold-subtle:      oklch(0.18  0.05   80);
+
+  --success:          oklch(0.58  0.13  163);
+  --success-subtle:   oklch(0.18  0.05  163);
+  --success-fg:       oklch(0.95  0.006 163);
+
+  --warning:          oklch(0.72  0.16   72);
+  --warning-subtle:   oklch(0.18  0.05   72);
+  --warning-fg:       oklch(0.95  0.008  72);
+
+  --danger:           oklch(0.62  0.18   18);
+  --danger-subtle:    oklch(0.18  0.05   18);
+  --danger-fg:        oklch(0.95  0.008  18);
+
+  --sidebar-bg:              oklch(0.14  0.07  150);
+  --sidebar-border:          oklch(0.21  0.07  150);
+  --sidebar-item-hover-bg:   oklch(0.21  0.08  150);
+  --sidebar-item-active-bg:  oklch(0.28  0.10  150);
+}
+
+/* ─── Base ─── */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--text-primary);
+    font-family: var(--font-figtree), 'Figtree', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-bricolage), 'Bricolage Grotesque', sans-serif;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: oklch(0.37 0.12 150 / 0.25);
+    color: oklch(0.15 0.018 150);
+  }
+}
+
+/* ─── Utilities ─── */
+@layer utilities {
+  .bg-background    { background-color: var(--background); }
+  .bg-surface       { background-color: var(--surface); }
+  .bg-surface-raised{ background-color: var(--surface-raised); }
+  .bg-brand         { background-color: var(--brand); }
+  .bg-brand-subtle  { background-color: var(--brand-subtle); }
+  .bg-success-subtle{ background-color: var(--success-subtle); }
+  .bg-warning-subtle{ background-color: var(--warning-subtle); }
+  .bg-danger-subtle { background-color: var(--danger-subtle); }
+  .bg-sidebar       { background-color: var(--sidebar-bg); }
+
+  .text-primary   { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-muted     { color: var(--text-muted); }
+  .text-disabled  { color: var(--text-disabled); }
+  .text-brand     { color: var(--brand); }
+  .text-brand-fg  { color: var(--brand-fg); }
+  .text-success   { color: var(--success); }
+  .text-warning   { color: var(--warning); }
+  .text-danger    { color: var(--danger); }
+
+  .border-default { border-color: var(--border); }
+  .border-subtle  { border-color: var(--border-subtle); }
+  .border-brand   { border-color: var(--brand); }
+
+  .font-display {
+    font-family: var(--font-bricolage), 'Bricolage Grotesque', sans-serif;
+  }
+
+  /* custom thin scrollbar */
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+}
+
+/* ─── Nav items (sidebar escura) ─── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-item-text);
+  transition: background-color 0.14s ease, color 0.14s ease;
+  white-space: nowrap;
+  width: 100%;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+}
+.nav-item:hover:not(.nav-item--disabled) {
+  background-color: var(--sidebar-item-hover-bg);
+  color: var(--sidebar-item-hover-text);
+}
+.nav-item--active {
+  background-color: var(--sidebar-item-active-bg);
+  color: var(--sidebar-item-active-text);
+  font-weight: 600;
+}
+.nav-item--disabled {
+  opacity: 0.30;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ─── Dot-grid background on main content ─── */
+.content-dotgrid {
+  position: relative;
+}
+.content-dotgrid::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    oklch(0.32 0.12 150 / 0.055) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  pointer-events: none;
+  z-index: 0;
+}
+.dark .content-dotgrid::before {
+  background-image: radial-gradient(
+    circle,
+    oklch(0.60 0.14 150 / 0.045) 1px,
+    transparent 1px
+  );
+}
+.content-dotgrid > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Shimmer skeleton ─── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface)        0%,
+    var(--surface-raised) 50%,
+    var(--surface)        100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+/* ─── Card base ─── */
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Elevated card with depth shadow */
+.card-elevated {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 4px 16px oklch(0.22 0.09 150 / 0.07);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.card-elevated:hover {
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.06),
+    0 8px 28px oklch(0.22 0.09 150 / 0.12),
+    0 0 0 1px oklch(0.37 0.12 150 / 0.10);
+}
+.dark .card-elevated {
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.20),
+    0 4px 16px oklch(0 0 0 / 0.30);
+}
+.dark .card-elevated:hover {
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.30),
+    0 12px 36px oklch(0 0 0 / 0.45),
+    0 0 0 1px oklch(0.60 0.14 150 / 0.20);
+}
+
+/* ─── Book card ─── */
+.book-card-overlay {
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.book-card:hover .book-card-overlay {
+  opacity: 1;
+}
+.book-card-actions {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.book-card:hover .book-card-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Table ─── */
+.table-row-hover:hover {
+  background-color: var(--brand-subtle);
+}
+
+/* ─── Focus ring ─── */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+
+/* ─── Reduce motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
