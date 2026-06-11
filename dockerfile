@@ -3,11 +3,9 @@ FROM haskell:9.6.7 AS build
 WORKDIR /build
 RUN apt-get update && apt-get install -y libpq-dev && rm -rf /var/lib/apt/lists/*
 
-# cache de dependências: copia só o .cabal primeiro
 COPY HaskellProj.cabal ./
 RUN cabal update && cabal build --only-dependencies
 
-# agora o código
 COPY . .
 RUN cabal build exe:HaskellProj
 RUN mkdir -p /out && cp "$(cabal list-bin exe:HaskellProj)" /out/HaskellProj

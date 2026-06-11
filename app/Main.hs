@@ -17,9 +17,9 @@ runMigration conn fp = do
 
 main :: IO ()
 main = do
-  port  <- maybe 4000 read <$> lookupEnv "PORT"          -- Render injeta PORT
+  port  <- maybe 4000 read <$> lookupEnv "PORT"
   let localConn = "host=localhost port=5432 dbname=biblioteca_inventario user=postgres password=020316 sslmode=disable"
-  dbUrl <- fromMaybe localConn <$> lookupEnv "DATABASE_URL"  -- Render injeta DATABASE_URL
+  dbUrl <- fromMaybe localConn <$> lookupEnv "DATABASE_URL"
 
   putStrLn $ "Servidor rodando na porta " ++ show port
   conn <- connectPostgreSQL (BS.pack dbUrl)
