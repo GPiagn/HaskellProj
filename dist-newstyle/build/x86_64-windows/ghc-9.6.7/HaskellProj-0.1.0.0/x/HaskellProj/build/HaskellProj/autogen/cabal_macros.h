@@ -40,15 +40,15 @@
   (major1) == 0 && (major2) <  11 || \
   (major1) == 0 && (major2) == 11 && (minor) <= 5)
 #endif /* MIN_VERSION_bytestring */
-/* package http-types-0.12.4 */
+/* package http-types-0.12.5 */
 #ifndef VERSION_http_types
-#define VERSION_http_types "0.12.4"
+#define VERSION_http_types "0.12.5"
 #endif /* VERSION_http_types */
 #ifndef MIN_VERSION_http_types
 #define MIN_VERSION_http_types(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  12 || \
-  (major1) == 0 && (major2) == 12 && (minor) <= 4)
+  (major1) == 0 && (major2) == 12 && (minor) <= 5)
 #endif /* MIN_VERSION_http_types */
 /* package mtl-2.3.1 */
 #ifndef VERSION_mtl

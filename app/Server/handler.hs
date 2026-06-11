@@ -174,7 +174,7 @@ handlePing = return $ object
 corsPolicy :: CorsResourcePolicy
 corsPolicy = simpleCorsResourcePolicy
   { corsOrigins        = Nothing
-  , corsMethods        = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  , corsMethods        = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   , corsRequestHeaders = ["Content-Type", "Authorization"]
   }
 

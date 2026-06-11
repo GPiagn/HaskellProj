@@ -1,13 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "http://localhost:4000/:path*",
-      },
-    ];
+    const backend = process.env.BACKEND_URL || "http://localhost:4000";
+    return [{ source: "/api/:path*", destination: `${backend}/:path*` }];
   },
 };
-
 export default nextConfig;
