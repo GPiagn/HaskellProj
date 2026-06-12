@@ -11,6 +11,12 @@ import {
   Trash2,
   User2,
   BookOpen,
+  ArrowUp,
+  ArrowDown,
+  Check,
+  CheckCircle2,
+  XCircle,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Exemplar, ExemplarInput } from "@/lib/types";
@@ -23,6 +29,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "grid" | "list";
+type SortField = "titulo" | "autor" | "classificacao" | "tipoObra" | "codigo";
 
 /* ─── Cover generation ─── */
 function titleHash(s: string): number {
@@ -110,16 +117,57 @@ const TIPO_COLORS: Record<string, "default" | "info" | "warning" | "success" | "
   Monografia: "success",
 };
 
+function InventarioBadge({ situacao }: { situacao: string | null }) {
+  if (situacao === "encontrado")
+    return <Badge variant="success" className="text-[9px]">Encontrado</Badge>;
+  if (situacao === "nao_encontrado")
+    return <Badge variant="danger" className="text-[9px]">Não encontrado</Badge>;
+  return <Badge variant="outline" className="text-[9px]">Não inventariado</Badge>;
+}
+function SelectCheckbox({
+  checked,
+  onChange,
+  className,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={cn(
+        "flex items-center justify-center w-5 h-5 rounded-md border transition-colors",
+        className
+      )}
+      style={{
+        backgroundColor: checked ? "var(--brand)" : "var(--surface)",
+        borderColor: checked ? "var(--brand)" : "var(--border)",
+        color: "oklch(0.98 0 0)",
+      }}
+    >
+      {checked && <Check size={13} strokeWidth={3} />}
+    </button>
+  );
+}
+
 function BookCardGrid({
   exemplar,
   index,
   onEdit,
   onDelete,
+  selected,
+  onToggleSelect,
 }: {
   exemplar: Exemplar;
   index: number;
   onEdit: () => void;
   onDelete: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   return (
     <motion.div
@@ -129,11 +177,24 @@ function BookCardGrid({
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 380, damping: 26 }}
       className="book-card group cursor-default card-elevated"
-      style={{ borderRadius: 12, overflow: "hidden" }}
+      style={{
+        borderRadius: 12,
+        overflow: "hidden",
+        outline: selected ? "2px solid var(--brand)" : "none",
+        outlineOffset: 2,
+      }}
     >
       {/* ─── Book cover (aspect ratio 3:4) ─── */}
       <div className="relative overflow-hidden" style={{ aspectRatio: "3 / 4" }}>
         <BookCover titulo={exemplar.titulo} />
+        
+        <div className="absolute top-2 left-2 z-10">
+          <SelectCheckbox
+            checked={selected}
+            onChange={onToggleSelect}
+            className="shadow-md"
+          />
+        </div>
 
         {/* Hover overlay — info panel */}
         <div className="book-card-overlay absolute inset-0 flex flex-col justify-between p-3"
@@ -211,6 +272,9 @@ function BookCardGrid({
             </Badge>
           )}
         </div>
+        <div className="pt-0.5">
+          <InventarioBadge situacao={exemplar.situacaoInventario} />
+        </div>
       </div>
     </motion.div>
   );
@@ -222,11 +286,15 @@ function BookRow({
   index,
   onEdit,
   onDelete,
+  selected,
+  onToggleSelect,
 }: {
   exemplar: Exemplar;
   index: number;
   onEdit: () => void;
   onDelete: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   return (
     <motion.tr
@@ -234,15 +302,23 @@ function BookRow({
       animate={{ opacity: 1 }}
       transition={{ delay: Math.min(index * 0.025, 0.4) }}
       className="table-row-hover group transition-colors"
-      style={{ borderBottom: "1px solid var(--border-subtle)" }}
+       style={{
+        borderRadius: 12,
+        overflow: "hidden",
+        outline: selected ? "2px solid var(--brand)" : "none",
+        outlineOffset: 2,
+      }}
     >
-      {/* Cover thumbnail */}
-      <td className="py-2.5 pl-4 pr-2 w-12">
-        <div
-          className="overflow-hidden flex-shrink-0 rounded-md"
-          style={{ width: 36, height: 48 }}
-        >
-          <BookCover titulo={exemplar.titulo} small />
+     {/* Checkbox + capa */}
+      <td className="py-2.5 pl-4 pr-2">
+        <div className="flex items-center gap-2.5">
+          <SelectCheckbox checked={selected} onChange={onToggleSelect} />
+          <div
+            className="overflow-hidden flex-shrink-0 rounded-md"
+            style={{ width: 36, height: 48 }}
+          >
+            <BookCover titulo={exemplar.titulo} small />
+          </div>
         </div>
       </td>
 
@@ -303,6 +379,11 @@ function BookRow({
         )}
       </td>
 
+      {/* Inventário */}
+      <td className="py-2.5 pr-4">
+        <InventarioBadge situacao={exemplar.situacaoInventario} />
+      </td>
+
       {/* Actions */}
       <td className="py-2.5 pr-4">
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -336,7 +417,7 @@ function ExemplarForm({
   loading,
 }: {
   initial?: Partial<Exemplar>;
-  onSubmit: (data: ExemplarInput) => void;
+  onSubmit: (data: ExemplarInput, inv: { resultado: string; observacao: string }) => void;
   onCancel: () => void;
   loading: boolean;
 }) {
@@ -347,6 +428,9 @@ function ExemplarForm({
     inpClassificacao: initial?.classificacao ?? null,
     inpTipoObra: initial?.tipoObra ?? null,
   });
+
+  const [invSituacao, setInvSituacao] = useState<string>(initial?.situacaoInventario ?? "");
+  const [invObs, setInvObs] = useState<string>("");
 
   const set = (k: keyof ExemplarInput, v: string) =>
     setForm((f) => ({ ...f, [k]: v || null }));
@@ -376,7 +460,8 @@ function ExemplarForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (!form.inpCodigo || !form.inpTitulo) return;
-        onSubmit(form);
+        if (invSituacao === "nao_encontrado" && !invObs.trim()) return;
+        onSubmit(form, { resultado: invSituacao, observacao: invObs.trim() });
       }}
       className="space-y-4"
     >
@@ -388,11 +473,51 @@ function ExemplarForm({
       {field("Autor", "inpAutor", false, "Nome do autor")}
       {field("Classificação", "inpClassificacao", false, "ex: 611.8 M1491n")}
 
+      {/* Situação de inventário */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+          Situação de inventário
+        </label>
+        <select
+          value={invSituacao}
+          onChange={(e) => setInvSituacao(e.target.value)}
+          className="w-full h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          <option value="">Não inventariado</option>
+          <option value="encontrado">Encontrado</option>
+          <option value="nao_encontrado">Não encontrado</option>
+        </select>
+      </div>
+
+      {invSituacao === "nao_encontrado" && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+            Motivo <span style={{ color: "var(--danger)" }}>*</span>
+          </label>
+          <Textarea
+            value={invObs}
+            onChange={(e) => setInvObs(e.target.value)}
+            placeholder="Ex.: não localizado na estante"
+            rows={2}
+          />
+        </div>
+      )}
+
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" size="sm" loading={loading}>
+        <Button
+          type="submit"
+          size="sm"
+          loading={loading}
+          disabled={invSituacao === "nao_encontrado" && !invObs.trim()}
+        >
           {initial?.exemplarId ? "Salvar alterações" : "Criar exemplar"}
         </Button>
       </div>
@@ -428,6 +553,10 @@ export default function CatalogoPage() {
   const [view, setView] = useState<ViewMode>("grid");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [tipoFilter, setTipoFilter] = useState<string>("");
+  const [invFilter, setInvFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortField>("titulo");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [modal, setModal] = useState<{
     type: "create" | "edit";
     exemplar?: Exemplar;
@@ -436,6 +565,10 @@ export default function CatalogoPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const toast = useToast();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [naoEncOpen, setNaoEncOpen] = useState(false);
+  const [naoEncObs, setNaoEncObs] = useState("");
 
   async function load() {
     setLoading(true);
@@ -452,31 +585,89 @@ export default function CatalogoPage() {
     load();
   }, []);
 
+// tipos únicos presentes no acervo, para o seletor de filtro
+  const tipos = useMemo(
+    () =>
+      Array.from(
+        new Set(exemplares.map((e) => e.tipoObra).filter(Boolean))
+      ) as string[],
+    [exemplares]
+  );
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return exemplares;
-    const q = search.toLowerCase();
-    return exemplares.filter(
-      (e) =>
-        e.titulo.toLowerCase().includes(q) ||
-        e.codigo.toLowerCase().includes(q) ||
-        (e.autor ?? "").toLowerCase().includes(q)
-    );
-  }, [exemplares, search]);
+    let list = exemplares;
+
+    // 1) busca textual
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.titulo.toLowerCase().includes(q) ||
+          e.codigo.toLowerCase().includes(q) ||
+          (e.autor ?? "").toLowerCase().includes(q)
+      );
+    }
+
+    // 2) filtro por tipo
+    if (tipoFilter) {
+      list = list.filter((e) => e.tipoObra === tipoFilter);
+    }
+
+    // filtro por situação de inventário
+    if (invFilter) {
+      list = list.filter((e) =>
+        invFilter === "nao_inventariado"
+          ? !e.situacaoInventario
+          : e.situacaoInventario === invFilter
+      );
+    }
+
+    // 3) ordenação (campos vazios vão sempre para o fim)
+    const dir = sortDir === "asc" ? 1 : -1;
+    list = [...list].sort((a, b) => {
+      const va = a[sortBy] ?? "";
+      const vb = b[sortBy] ?? "";
+      if (va === "" && vb !== "") return 1;
+      if (vb === "" && va !== "") return -1;
+      return (
+        va.localeCompare(vb, "pt-BR", { numeric: true, sensitivity: "base" }) *
+        dir
+      );
+    });
+
+    return list;
+  }, [exemplares, search, tipoFilter, invFilter, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
   const paginated = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
-  async function handleSave(data: ExemplarInput) {
+  async function handleSave(
+    data: ExemplarInput,
+    inv: { resultado: string; observacao: string }
+  ) {
     setSaving(true);
     try {
+      let exId: number;
       if (modal?.type === "edit" && modal.exemplar) {
         await api.exemplares.update(modal.exemplar.exemplarId, data);
+        exId = modal.exemplar.exemplarId;
         toast.success("Exemplar atualizado");
       } else {
-        await api.exemplares.create(data);
+        const res = await api.exemplares.create(data);
+        exId = res.id;
         toast.success("Exemplar criado");
       }
+
+      // registra a situação de inventário, se alguma foi escolhida
+      if (inv.resultado) {
+        await api.inventario.registrar({
+          invExemplarId: exId,
+          invResultado: inv.resultado as "encontrado" | "nao_encontrado",
+          invObservacao: inv.resultado === "nao_encontrado" ? inv.observacao : null,
+        });
+      }
+
       setModal(null);
       await load();
     } catch (e) {
@@ -498,6 +689,49 @@ export default function CatalogoPage() {
       toast.error("Erro ao remover", e instanceof Error ? e.message : undefined);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  async function bulkMark(
+    resultado: "encontrado" | "nao_encontrado",
+    obs: string | null
+  ) {
+    setBulkSaving(true);
+    try {
+      // sequencial de propósito: o backend usa uma conexão única,
+      // então as requisições não devem ser concorrentes
+      const ids = Array.from(selected);
+      for (const id of ids) {
+        await api.inventario.registrar({
+          invExemplarId: id,
+          invResultado: resultado,
+          invObservacao: obs,
+        });
+      }
+      toast.success(
+        `${ids.length} ${ids.length === 1 ? "exemplar atualizado" : "exemplares atualizados"}`
+      );
+      clearSelection();
+      setNaoEncOpen(false);
+      setNaoEncObs("");
+      await load();
+    } catch (e) {
+      toast.error("Erro ao atualizar", e instanceof Error ? e.message : undefined);
+    } finally {
+      setBulkSaving(false);
     }
   }
 
@@ -547,6 +781,76 @@ export default function CatalogoPage() {
             }}
           />
         </div>
+
+        {/* Filtro por tipo */}
+        <select
+          value={tipoFilter}
+          onChange={(e) => { setTipoFilter(e.target.value); setPage(1); }}
+          className="h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+          aria-label="Filtrar por tipo"
+        >
+          <option value="">Todos os tipos</option>
+          {tipos.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+
+        {/* Filtro por situação de inventário */}
+        <select
+          value={invFilter}
+          onChange={(e) => { setInvFilter(e.target.value); setPage(1); }}
+          className="h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+          aria-label="Filtrar por situação de inventário"
+        >
+          <option value="">Toda situação</option>
+          <option value="encontrado">Encontrados</option>
+          <option value="nao_encontrado">Não encontrados</option>
+          <option value="nao_inventariado">Não inventariados</option>
+        </select>
+
+        {/* Ordenar por */}
+        <select
+          value={sortBy}
+          onChange={(e) => { setSortBy(e.target.value as SortField); setPage(1); }}
+          className="h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+          aria-label="Ordenar por"
+        >
+          <option value="titulo">Título</option>
+          <option value="autor">Autor</option>
+          <option value="classificacao">Classificação</option>
+          <option value="tipoObra">Tipo</option>
+          <option value="codigo">Código</option>
+        </select>
+
+        {/* Direção da ordenação */}
+        <button
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          className="p-2 rounded-lg transition-colors"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-muted)",
+          }}
+          aria-label={sortDir === "asc" ? "Crescente" : "Decrescente"}
+          title={sortDir === "asc" ? "Crescente (A→Z)" : "Decrescente (Z→A)"}
+        >
+          {sortDir === "asc" ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+        </button>
 
         {/* View toggle */}
         <div
@@ -633,6 +937,8 @@ export default function CatalogoPage() {
               index={i}
               onEdit={() => setModal({ type: "edit", exemplar: ex })}
               onDelete={() => setDeleteTarget(ex)}
+              selected={selected.has(ex.exemplarId)}
+              onToggleSelect={() => toggleSelect(ex.exemplarId)}
             />
           ))}
         </div>
@@ -644,7 +950,7 @@ export default function CatalogoPage() {
           <table className="w-full text-left">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                {["", "Título / Código", "Autor", "Classificação", "Tipo", ""].map(
+                {["", "Título / Código", "Autor", "Classificação", "Tipo", "Inventário", ""].map(
                   (h, i) => (
                     <th
                       key={i}
@@ -668,6 +974,8 @@ export default function CatalogoPage() {
                   index={i}
                   onEdit={() => setModal({ type: "edit", exemplar: ex })}
                   onDelete={() => setDeleteTarget(ex)}
+                  selected={selected.has(ex.exemplarId)}
+                  onToggleSelect={() => toggleSelect(ex.exemplarId)}
                 />
               ))}
             </tbody>
@@ -703,6 +1011,48 @@ export default function CatalogoPage() {
         </div>
       )}
 
+      {/* ─── Barra de ações em massa ─── */}
+      {selected.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-2.5 rounded-xl card-elevated"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 10px 30px oklch(0 0 0 / 0.18)",
+          }}
+        >
+          <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+            {selected.size} selecionado{selected.size > 1 ? "s" : ""}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            loading={bulkSaving}
+            onClick={() => bulkMark("encontrado", null)}
+          >
+            <CheckCircle2 size={14} /> Encontrado
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkSaving}
+            onClick={() => setNaoEncOpen(true)}
+          >
+            <XCircle size={14} /> Não encontrado
+          </Button>
+          <button
+            onClick={clearSelection}
+            className="p-1.5 rounded-md transition-colors"
+            style={{ color: "var(--text-muted)" }}
+            aria-label="Limpar seleção"
+          >
+            <X size={15} />
+          </button>
+        </motion.div>
+      )}
+
       {/* ─── Create / Edit modal ─── */}
       <Dialog
         open={modal !== null}
@@ -722,6 +1072,50 @@ export default function CatalogoPage() {
             loading={saving}
           />
         )}
+      </Dialog>
+
+      {/* ─── Motivo para "não encontrado" ─── */}
+      <Dialog
+        open={naoEncOpen}
+        onOpenChange={(open) => { if (!open) { setNaoEncOpen(false); setNaoEncObs(""); } }}
+        title="Marcar como não encontrado"
+        description={`${selected.size} exemplar${selected.size > 1 ? "es" : ""} selecionado${selected.size > 1 ? "s" : ""}`}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+              Motivo / observação <span style={{ color: "var(--danger)" }}>*</span>
+            </label>
+            <Textarea
+              value={naoEncObs}
+              onChange={(e) => setNaoEncObs(e.target.value)}
+              placeholder="Ex.: não localizado na estante durante o inventário"
+              rows={3}
+            />
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Obrigatória para itens não encontrados.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setNaoEncOpen(false); setNaoEncObs(""); }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={bulkSaving}
+              disabled={!naoEncObs.trim()}
+              onClick={() => bulkMark("nao_encontrado", naoEncObs.trim())}
+            >
+              Confirmar
+            </Button>
+          </div>
+        </div>
       </Dialog>
 
       {/* ─── Delete confirm ─── */}

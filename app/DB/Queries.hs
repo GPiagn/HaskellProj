@@ -15,14 +15,24 @@ import Types.Exemplar
 listExemplares :: Connection -> IO [Exemplar]
 listExemplares conn =
   query_ conn
-    "SELECT id, codigo, titulo, autor, classificacao, tipo_obra, situacao_sistema \
-    \ FROM exemplares ORDER BY id"
+    "SELECT e.id, e.codigo, e.titulo, e.autor, e.classificacao, e.tipo_obra, \
+    \       e.situacao_sistema, i.resultado \
+    \ FROM exemplares e \
+    \ LEFT JOIN inventario i \
+    \   ON i.exemplar_id = e.id \
+    \   AND i.ano_inventario = EXTRACT(YEAR FROM NOW()) \
+    \ ORDER BY e.id"
 
 getExemplarById :: Connection -> Int -> IO (Maybe Exemplar)
 getExemplarById conn eid = do
   results <- query conn
-    "SELECT id, codigo, titulo, autor, classificacao, tipo_obra, situacao_sistema \
-    \ FROM exemplares WHERE id = ?"
+    "SELECT e.id, e.codigo, e.titulo, e.autor, e.classificacao, e.tipo_obra, \
+    \       e.situacao_sistema, i.resultado \
+    \ FROM exemplares e \
+    \ LEFT JOIN inventario i \
+    \   ON i.exemplar_id = e.id \
+    \   AND i.ano_inventario = EXTRACT(YEAR FROM NOW()) \
+    \ WHERE e.id = ?"
     (Only eid)
   case results of
     [ex] -> return (Just ex)

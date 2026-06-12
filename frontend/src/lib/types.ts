@@ -8,6 +8,7 @@ export type Exemplar = {
   classificacao: string | null;
   tipoObra: string | null;
   situacaoSistema: string | null;
+  situacaoInventario: string | null;
 };
 
 export type ExemplarInput = {

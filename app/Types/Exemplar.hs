@@ -15,20 +15,23 @@ import Database.PostgreSQL.Simple.ToField (toField)
 -- ============================================================
 
 data Exemplar = Exemplar
-  { exemplarId      :: Int
-  , codigo          :: Text
-  , titulo          :: Text
-  , autor           :: Maybe Text
-  , classificacao   :: Maybe Text
-  , tipoObra        :: Maybe Text
-  , situacaoSistema :: Maybe Text
+  { exemplarId         :: Int
+  , codigo             :: Text
+  , titulo             :: Text
+  , autor              :: Maybe Text
+  , classificacao      :: Maybe Text
+  , tipoObra           :: Maybe Text
+  , situacaoSistema    :: Maybe Text
+  , situacaoInventario :: Maybe Text   -- "encontrado" | "nao_encontrado" | NULL (não inventariado)
   } deriving (Show, Generic)
 
 instance ToJSON Exemplar
 instance FromJSON Exemplar
 
 instance FromRow Exemplar where
-  fromRow = Exemplar <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = Exemplar
+    <$> field <*> field <*> field <*> field
+    <*> field <*> field <*> field <*> field
 
 data ExemplarInput = ExemplarInput
   { inpCodigo        :: Text
