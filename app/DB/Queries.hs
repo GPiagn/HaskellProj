@@ -16,7 +16,8 @@ listExemplares :: Connection -> IO [Exemplar]
 listExemplares conn =
   query_ conn
     "SELECT e.id, e.codigo, e.titulo, e.autor, e.classificacao, e.tipo_obra, \
-    \       e.situacao_sistema, i.resultado \
+    \       e.situacao_sistema, e.numero_acervo, e.numero_exemplar, \
+    \       e.modo_aquisicao, e.data_aquisicao, i.resultado \
     \ FROM exemplares e \
     \ LEFT JOIN inventario i \
     \   ON i.exemplar_id = e.id \
@@ -27,7 +28,8 @@ getExemplarById :: Connection -> Int -> IO (Maybe Exemplar)
 getExemplarById conn eid = do
   results <- query conn
     "SELECT e.id, e.codigo, e.titulo, e.autor, e.classificacao, e.tipo_obra, \
-    \       e.situacao_sistema, i.resultado \
+    \       e.situacao_sistema, e.numero_acervo, e.numero_exemplar, \
+    \       e.modo_aquisicao, e.data_aquisicao, i.resultado \
     \ FROM exemplares e \
     \ LEFT JOIN inventario i \
     \   ON i.exemplar_id = e.id \
@@ -41,20 +43,31 @@ getExemplarById conn eid = do
 insertExemplar :: Connection -> ExemplarInput -> IO (Maybe Int)
 insertExemplar conn input = do
   results <- query conn
-    "INSERT INTO exemplares (codigo, titulo, autor, classificacao, tipo_obra) \
-    \ VALUES (?, ?, ?, ?, ?) RETURNING id"
+    "INSERT INTO exemplares \
+    \   (codigo, titulo, autor, classificacao, tipo_obra, situacao_sistema, \
+    \    numero_acervo, numero_exemplar, modo_aquisicao, data_aquisicao) \
+    \ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
     input
   case results of
     [Only newId] -> return (Just newId)
     _            -> return Nothing
 
 updateExemplar :: Connection -> Int -> ExemplarInput -> IO Int64
-updateExemplar conn eid (ExemplarInput c t a cl to) =
+updateExemplar conn eid input =
   execute conn
     "UPDATE exemplares \
-    \ SET codigo = ?, titulo = ?, autor = ?, classificacao = ?, tipo_obra = ? \
+    \ SET codigo           = ?, \
+    \     titulo           = ?, \
+    \     autor            = ?, \
+    \     classificacao    = ?, \
+    \     tipo_obra        = ?, \
+    \     situacao_sistema = ?, \
+    \     numero_acervo    = ?, \
+    \     numero_exemplar  = ?, \
+    \     modo_aquisicao   = ?, \
+    \     data_aquisicao   = ? \
     \ WHERE id = ?"
-    (c, t, a, cl, to, eid)
+    (input :. Only eid)
 
 deleteExemplar :: Connection -> Int -> IO Int64
 deleteExemplar conn eid =

@@ -21,8 +21,12 @@ data Exemplar = Exemplar
   , autor              :: Maybe Text
   , classificacao      :: Maybe Text
   , tipoObra           :: Maybe Text
-  , situacaoSistema    :: Maybe Text
-  , situacaoInventario :: Maybe Text   -- "encontrado" | "nao_encontrado" | NULL (não inventariado)
+  , situacaoSistema    :: Maybe Text    -- situação do exemplar (Normal, Excluído, …)
+  , numeroAcervo       :: Maybe Int
+  , numeroExemplar     :: Maybe Int
+  , modoAquisicao      :: Maybe Text
+  , dataAquisicao      :: Maybe Day
+  , situacaoInventario :: Maybe Text    -- "encontrado" | "nao_encontrado" | NULL (vem do JOIN)
   } deriving (Show, Generic)
 
 instance ToJSON Exemplar
@@ -32,21 +36,28 @@ instance FromRow Exemplar where
   fromRow = Exemplar
     <$> field <*> field <*> field <*> field
     <*> field <*> field <*> field <*> field
+    <*> field <*> field <*> field <*> field
 
 data ExemplarInput = ExemplarInput
-  { inpCodigo        :: Text
-  , inpTitulo        :: Text
-  , inpAutor         :: Maybe Text
-  , inpClassificacao :: Maybe Text
-  , inpTipoObra      :: Maybe Text
+  { inpCodigo          :: Text
+  , inpTitulo          :: Text
+  , inpAutor           :: Maybe Text
+  , inpClassificacao   :: Maybe Text
+  , inpTipoObra        :: Maybe Text
+  , inpSituacaoSistema :: Maybe Text
+  , inpNumeroAcervo    :: Maybe Int
+  , inpNumeroExemplar  :: Maybe Int
+  , inpModoAquisicao   :: Maybe Text
+  , inpDataAquisicao   :: Maybe Day
   } deriving (Show, Generic)
 
 instance ToJSON ExemplarInput
 instance FromJSON ExemplarInput
 
 instance ToRow ExemplarInput where
-  toRow (ExemplarInput c t a cl to) =
-    [toField c, toField t, toField a, toField cl, toField to]
+  toRow (ExemplarInput c t a cl to ss na ne ma da) =
+    [ toField c, toField t, toField a, toField cl, toField to
+    , toField ss, toField na, toField ne, toField ma, toField da ]
 
 -- ============================================================
 -- Regras de negócio do inventário

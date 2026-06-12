@@ -9,6 +9,10 @@ export type Exemplar = {
   tipoObra: string | null;
   situacaoSistema: string | null;
   situacaoInventario: string | null;
+  numeroAcervo: number | null;
+  numeroExemplar: number | null;
+  modoAquisicao: string | null;
+  dataAquisicao: string | null;
 };
 
 export type ExemplarInput = {
@@ -17,6 +21,11 @@ export type ExemplarInput = {
   inpAutor: string | null;
   inpClassificacao: string | null;
   inpTipoObra: string | null;
+  inpSituacaoSistema: string | null;
+  inpNumeroAcervo: number | null;
+  inpNumeroExemplar: number | null;
+  inpModoAquisicao: string | null;
+  inpDataAquisicao: string | null;
 };
 
 export type ExemplarPatch = {

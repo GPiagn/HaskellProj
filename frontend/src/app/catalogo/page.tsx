@@ -117,6 +117,36 @@ const TIPO_COLORS: Record<string, "default" | "info" | "warning" | "success" | "
   Monografia: "success",
 };
 
+const TIPOS_MATERIAL = [
+  "Catálogo manual", "CD", "Dissertação", "DVD", "Evento", "Folheto",
+  "Livro", "Outro", "Periódico", "Tese", "Trabalho acadêmico/TCC",
+];
+
+const SITUACOES_EXEMPLAR = [
+  "Normal", "Excluído", "Indisponível", "Processamento", "Malote",
+  "Emprestado permanente", "Inventario", "Encadernação", "Embargado",
+  "Balcão", "Desbaste", "Quarentena",
+];
+
+const MODOS_AQUISICAO = [
+  "Compra", "Doação", "Permuta", "Não identificado", "Multa",
+  "Outra", "Reposição", "Assinatura", "Verba Projeto",
+];
+
+function DetailRow({ label, value }: { label: string; value: string | number | null }) {
+  return (
+    <div
+      className="flex justify-between gap-4 py-1.5 border-b"
+      style={{ borderColor: "var(--border)" }}
+    >
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span className="text-xs font-medium text-right" style={{ color: "var(--text-primary)" }}>
+        {value === null || value === "" ? "—" : value}
+      </span>
+    </div>
+  );
+}
+
 function InventarioBadge({ situacao }: { situacao: string | null }) {
   if (situacao === "encontrado")
     return <Badge variant="success" className="text-[9px]">Encontrado</Badge>;
@@ -161,6 +191,7 @@ function BookCardGrid({
   onDelete,
   selected,
   onToggleSelect,
+  onOpenDetail,
 }: {
   exemplar: Exemplar;
   index: number;
@@ -168,6 +199,7 @@ function BookCardGrid({
   onDelete: () => void;
   selected: boolean;
   onToggleSelect: () => void;
+  onOpenDetail: () => void;
 }) {
   return (
     <motion.div
@@ -176,7 +208,8 @@ function BookCardGrid({
       whileHover={{ y: -5, scale: 1.015 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: "spring", stiffness: 380, damping: 26 }}
-      className="book-card group cursor-default card-elevated"
+      onClick={onOpenDetail}
+      className="book-card group cursor-pointer card-elevated"
       style={{
         borderRadius: 12,
         overflow: "hidden",
@@ -257,11 +290,8 @@ function BookCardGrid({
           {exemplar.titulo}
         </p>
         <div className="flex items-center justify-between gap-1">
-          <p
-            className="text-[10px] font-mono truncate"
-            style={{ color: "var(--text-muted)" }}
-          >
-            #{exemplar.codigo}
+          <p className="text-[10px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
+            {exemplar.numeroAcervo != null ? `Acervo ${exemplar.numeroAcervo}` : `#${exemplar.codigo}`}
           </p>
           {exemplar.tipoObra && (
             <Badge
@@ -288,6 +318,7 @@ function BookRow({
   onDelete,
   selected,
   onToggleSelect,
+  onOpenDetail,
 }: {
   exemplar: Exemplar;
   index: number;
@@ -295,14 +326,16 @@ function BookRow({
   onDelete: () => void;
   selected: boolean;
   onToggleSelect: () => void;
+  onOpenDetail: () => void;
 }) {
   return (
     <motion.tr
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: Math.min(index * 0.025, 0.4) }}
-      className="table-row-hover group transition-colors"
-       style={{
+      onClick={onOpenDetail}
+      className="table-row-hover group transition-colors cursor-pointer"
+      style={{
         borderRadius: 12,
         overflow: "hidden",
         outline: selected ? "2px solid var(--brand)" : "none",
@@ -427,6 +460,11 @@ function ExemplarForm({
     inpAutor: initial?.autor ?? null,
     inpClassificacao: initial?.classificacao ?? null,
     inpTipoObra: initial?.tipoObra ?? null,
+    inpSituacaoSistema: initial?.situacaoSistema ?? "Normal",
+    inpNumeroAcervo: initial?.numeroAcervo ?? null,
+    inpNumeroExemplar: initial?.numeroExemplar ?? null,
+    inpModoAquisicao: initial?.modoAquisicao ?? null,
+    inpDataAquisicao: initial?.dataAquisicao ?? null,
   });
 
   const [invSituacao, setInvSituacao] = useState<string>(initial?.situacaoInventario ?? "");
@@ -455,6 +493,40 @@ function ExemplarForm({
     </div>
   );
 
+  const selectField = (label: string, k: keyof ExemplarInput, options: string[], emptyLabel = "—") => (
+    <div className="space-y-1.5" key={k}>
+      <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{label}</label>
+      <select
+        value={(form[k] as string) ?? ""}
+        onChange={(e) => set(k, e.target.value)}
+        className="w-full h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+        style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+
+  const numField = (label: string, k: keyof ExemplarInput, placeholder = "") => (
+    <div className="space-y-1.5" key={k}>
+      <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{label}</label>
+      <Input
+        type="number"
+        value={(form[k] as number | null) ?? ""}
+        onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value === "" ? null : Number(e.target.value) }))}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+
+  const dateField = (label: string, k: keyof ExemplarInput) => (
+    <div className="space-y-1.5" key={k}>
+      <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{label}</label>
+      <Input type="date" value={(form[k] as string) ?? ""} onChange={(e) => set(k, e.target.value)} />
+    </div>
+  );
+
   return (
     <form
       onSubmit={(e) => {
@@ -466,12 +538,36 @@ function ExemplarForm({
       className="space-y-4"
     >
       <div className="grid grid-cols-2 gap-3">
-        {field("Código", "inpCodigo", true, "ex: 1455")}
-        {field("Tipo de obra", "inpTipoObra", false, "Livro, Periódico…")}
+        {field("Tombo", "inpCodigo", true, "ex: 1455")}
+        {selectField("Tipo de material", "inpTipoObra", TIPOS_MATERIAL)}
       </div>
       {field("Título", "inpTitulo", true, "Nome completo da obra")}
       {field("Autor", "inpAutor", false, "Nome do autor")}
       {field("Classificação", "inpClassificacao", false, "ex: 611.8 M1491n")}
+
+      <div className="grid grid-cols-2 gap-3">
+        {numField("Nº do acervo", "inpNumeroAcervo", "ex: 12345")}
+        {numField("Nº do exemplar", "inpNumeroExemplar", "ex: 1")}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+            Situação do exemplar
+          </label>
+          <select
+            value={form.inpSituacaoSistema ?? "Normal"}
+            onChange={(e) => set("inpSituacaoSistema", e.target.value)}
+            className="w-full h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+            style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+          >
+            {SITUACOES_EXEMPLAR.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        {selectField("Modo de aquisição", "inpModoAquisicao", MODOS_AQUISICAO)}
+      </div>
+
+      {dateField("Data de aquisição", "inpDataAquisicao")}
 
       {/* Situação de inventário */}
       <div className="space-y-1.5">
@@ -562,6 +658,7 @@ export default function CatalogoPage() {
     exemplar?: Exemplar;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Exemplar | null>(null);
+  const [detail, setDetail] = useState<Exemplar | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const toast = useToast();
@@ -939,6 +1036,7 @@ export default function CatalogoPage() {
               onDelete={() => setDeleteTarget(ex)}
               selected={selected.has(ex.exemplarId)}
               onToggleSelect={() => toggleSelect(ex.exemplarId)}
+              onOpenDetail={() => setDetail(ex)}
             />
           ))}
         </div>
@@ -976,6 +1074,7 @@ export default function CatalogoPage() {
                   onDelete={() => setDeleteTarget(ex)}
                   selected={selected.has(ex.exemplarId)}
                   onToggleSelect={() => toggleSelect(ex.exemplarId)}
+                  onOpenDetail={() => setDetail(ex)}
                 />
               ))}
             </tbody>
@@ -1058,6 +1157,7 @@ export default function CatalogoPage() {
         open={modal !== null}
         onOpenChange={(open) => !open && setModal(null)}
         title={modal?.type === "edit" ? "Editar exemplar" : "Novo exemplar"}
+        size="lg"
         description={
           modal?.type === "edit"
             ? `Editando: ${modal.exemplar?.titulo}`
@@ -1154,6 +1254,57 @@ export default function CatalogoPage() {
           </div>
         )}
       </Dialog>
+
+      {/* ─── Detalhes do exemplar ─── */}
+      <Dialog
+        open={detail !== null}
+        onOpenChange={(open) => !open && setDetail(null)}
+        title={detail?.titulo ?? "Detalhes"}
+        description={detail?.autor ?? undefined}
+      >
+        {detail && (
+          <div className="space-y-3">
+            <div>
+              <DetailRow label="Nº do acervo" value={detail.numeroAcervo} />
+              <DetailRow label="Nº do exemplar" value={detail.numeroExemplar} />
+              <DetailRow label="Tombo" value={detail.codigo} />
+              <DetailRow label="Tipo de material" value={detail.tipoObra} />
+              <DetailRow label="Classificação" value={detail.classificacao} />
+              <DetailRow label="Situação do exemplar" value={detail.situacaoSistema} />
+              <DetailRow label="Modo de aquisição" value={detail.modoAquisicao} />
+              <DetailRow
+                label="Data de aquisição"
+                value={detail.dataAquisicao ? detail.dataAquisicao.split("-").reverse().join("/") : null}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Situação de inventário
+              </span>
+              <InventarioBadge situacao={detail.situacaoInventario} />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const ex = detail;
+                  setDetail(null);
+                  setModal({ type: "edit", exemplar: ex });
+                }}
+              >
+                <Pencil size={14} /> Editar
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setDetail(null)}>
+                Fechar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
     </div>
   );
 }

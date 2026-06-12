@@ -9,6 +9,14 @@ CREATE TABLE IF NOT EXISTS exemplares (
     criado_em        TIMESTAMP    DEFAULT NOW()
 );
 
+-- Colunas adicionadas depois da criacao original.
+-- ADD COLUMN IF NOT EXISTS eh idempotente: roda a cada start sem erro
+-- e sem apagar nada que ja exista.
+ALTER TABLE exemplares ADD COLUMN IF NOT EXISTS numero_acervo   BIGINT;
+ALTER TABLE exemplares ADD COLUMN IF NOT EXISTS numero_exemplar BIGINT;
+ALTER TABLE exemplares ADD COLUMN IF NOT EXISTS modo_aquisicao  VARCHAR(50);
+ALTER TABLE exemplares ADD COLUMN IF NOT EXISTS data_aquisicao  DATE;
+
 CREATE TABLE IF NOT EXISTS emprestimos (
     id               SERIAL PRIMARY KEY,
     exemplar_id      INTEGER NOT NULL REFERENCES exemplares(id),

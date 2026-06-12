@@ -58,6 +58,7 @@ export function Dialog({
                   className={cn(
                     "fixed z-50",
                     "w-[calc(100vw-32px)] rounded-2xl p-6",
+                    "flex flex-col max-h-[calc(100vh-48px)]",
                     "bg-[var(--surface-raised)] border border-[var(--border)]",
                     "focus:outline-none",
                     sizes[size]
@@ -72,7 +73,7 @@ export function Dialog({
                       "0 24px 64px oklch(0 0 0 / 0.18), 0 2px 8px oklch(0 0 0 / 0.08)",
                   }}
                 >
-                  <div className="flex items-start justify-between gap-4 mb-5">
+                  <div className="flex items-start justify-between gap-4 mb-5 flex-shrink-0">
                     <div>
                       <RadixDialog.Title className="text-base font-semibold font-display text-[var(--text-primary)]">
                         {title}
@@ -90,7 +91,7 @@ export function Dialog({
                       <X size={16} />
                     </RadixDialog.Close>
                   </div>
-                  {children}
+                  <div className="overflow-y-auto min-h-0">{children}</div>
                 </motion.div>
               </RadixDialog.Content>
             </>
