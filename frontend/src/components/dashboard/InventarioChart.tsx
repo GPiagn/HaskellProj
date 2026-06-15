@@ -1,35 +1,26 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from "recharts";
 import { useTheme } from "next-themes";
+import { api } from "@/lib/api";
+import type { DashboardTotais, Exemplar } from "@/lib/types";
 
-const MONTHLY_DATA = [
-  { mes: "Jan", encontrados: 1820, naoEncontrados: 45 },
-  { mes: "Fev", encontrados: 2100, naoEncontrados: 38 },
-  { mes: "Mar", encontrados: 1950, naoEncontrados: 52 },
-  { mes: "Abr", encontrados: 2350, naoEncontrados: 29 },
-  { mes: "Mai", encontrados: 2180, naoEncontrados: 41 },
-  { mes: "Jun", encontrados: 2400, naoEncontrados: 35 },
-];
-
-const CATEGORY_DATA = [
-  { categoria: "Ciências da Saúde", exemplares: 4200 },
-  { categoria: "Ciências Exatas", exemplares: 3100 },
-  { categoria: "Humanidades", exemplares: 2800 },
-  { categoria: "Tecnologia", exemplares: 2200 },
-  { categoria: "Literatura", exemplares: 1800 },
-  { categoria: "Outros", exemplares: 1400 },
-];
+/* Cores semânticas alinhadas com a legenda do dashboard */
+const STATUS_COLORS = {
+  encontrados: "oklch(0.50 0.13 163)", // verde / encontrados
+  naoEncontrados: "oklch(0.52 0.20 18)", // vermelho / não encontrados
+  atrasados: "oklch(0.70 0.15 75)", // âmbar / atrasos
+};
 
 function ChartTooltipStyle({ textColor }: { textColor: string }) {
   return (
@@ -46,7 +37,7 @@ function ChartTooltipStyle({ textColor }: { textColor: string }) {
   );
 }
 
-export function InventarioChart() {
+export function InventarioChart({ totais }: { totais: DashboardTotais | null }) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -54,28 +45,80 @@ export function InventarioChart() {
   const axisColor = isDark ? "oklch(0.50 0.012 260)" : "oklch(0.60 0.010 262)";
   const textColor = isDark ? "oklch(0.95 0.006 260)" : "oklch(0.15 0.025 262)";
 
+  const tooltipStyle = {
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--surface-raised)",
+    color: textColor,
+    fontSize: 12,
+  };
+
+  /* ─── Gráfico 2: lista real de exemplares (para agrupar por situação) ─── */
+  const [exemplares, setExemplares] = useState<Exemplar[] | null>(null);
+
+  useEffect(() => {
+    api.exemplares
+      .list()
+      .then(setExemplares)
+      .catch(() => setExemplares([]));
+  }, []);
+
+  /* ─── Gráfico 1: situação do inventário (vem dos totais reais) ─── */
+  const statusData = totais
+    ? [
+        {
+          situacao: "Encontrados",
+          qtd: totais.totalEncontrados,
+          cor: STATUS_COLORS.encontrados,
+        },
+        {
+          situacao: "Não encontrados",
+          qtd: totais.totalNaoEncontrados,
+          cor: STATUS_COLORS.naoEncontrados,
+        },
+        {
+          situacao: "Atrasados",
+          qtd: totais.totalEmprestimosAtrasados,
+          cor: STATUS_COLORS.atrasados,
+        },
+      ]
+    : [];
+
+  /* ─── Gráfico 2: agrupamento por situacaoSistema (Normal, Processamento…) ─── */
+  const situacaoData = (() => {
+    if (!exemplares) return [];
+    const contagem = new Map<string, number>();
+    for (const ex of exemplares) {
+      const chave = ex.situacaoSistema?.trim() || "Não informado";
+      contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+    }
+    return Array.from(contagem, ([situacao, qtd]) => ({ situacao, qtd })).sort(
+      (a, b) => b.qtd - a.qtd
+    );
+  })();
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <ChartTooltipStyle textColor={textColor} />
 
-      {/* Inventário por mês */}
+      {/* Situação do inventário */}
       <div className="card p-5">
         <div className="mb-4">
           <h3
             className="text-sm font-semibold font-display"
             style={{ color: "var(--text-primary)" }}
           >
-            Inventário por mês
+            Situação do inventário
           </h3>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-            Exemplares verificados nos últimos 6 meses
+            Exemplares por resultado do inventário
           </p>
         </div>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={MONTHLY_DATA} barGap={4}>
+          <BarChart data={statusData} margin={{ left: 0, right: 12 }}>
             <CartesianGrid vertical={false} stroke={gridColor} strokeWidth={1} />
             <XAxis
-              dataKey="mes"
+              dataKey="situacao"
               tick={{ fontSize: 11, fill: axisColor }}
               axisLine={false}
               tickLine={false}
@@ -85,64 +128,60 @@ export function InventarioChart() {
               axisLine={false}
               tickLine={false}
               width={40}
+              allowDecimals={false}
             />
             <Tooltip
               cursor={{ fill: "oklch(0.32 0.12 150 / 0.06)" }}
-              contentStyle={{
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "var(--surface-raised)",
-                color: textColor,
-                fontSize: 12,
-              }}
+              contentStyle={tooltipStyle}
             />
             <Bar
-              dataKey="encontrados"
-              name="Encontrados"
-              fill="oklch(0.50 0.13 163)"
+              dataKey="qtd"
+              name="Exemplares"
               radius={[4, 4, 0, 0]}
-              maxBarSize={32}
-            />
-            <Bar
-              dataKey="naoEncontrados"
-              name="Não encontrados"
-              fill="oklch(0.52 0.20 18)"
-              radius={[4, 4, 0, 0]}
-              maxBarSize={32}
-            />
+              maxBarSize={48}
+            >
+              {statusData.map((d) => (
+                <Cell key={d.situacao} fill={d.cor} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Distribuição por categoria */}
+      {/* Situação do exemplar */}
       <div className="card p-5">
         <div className="mb-4">
           <h3
             className="text-sm font-semibold font-display"
             style={{ color: "var(--text-primary)" }}
           >
-            Distribuição por categoria
+            Situação do exemplar
           </h3>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-            Exemplares cadastrados por área do conhecimento
+            Exemplares por situação no sistema
           </p>
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart
-            data={CATEGORY_DATA}
+            data={situacaoData}
             layout="vertical"
             margin={{ left: 0, right: 12 }}
           >
-            <CartesianGrid horizontal={false} stroke={gridColor} strokeWidth={1} />
+            <CartesianGrid
+              horizontal={false}
+              stroke={gridColor}
+              strokeWidth={1}
+            />
             <XAxis
               type="number"
               tick={{ fontSize: 11, fill: axisColor }}
               axisLine={false}
               tickLine={false}
+              allowDecimals={false}
             />
             <YAxis
               type="category"
-              dataKey="categoria"
+              dataKey="situacao"
               tick={{ fontSize: 10, fill: axisColor }}
               axisLine={false}
               tickLine={false}
@@ -150,26 +189,17 @@ export function InventarioChart() {
             />
             <Tooltip
               cursor={{ fill: "oklch(0.32 0.12 150 / 0.06)" }}
-              contentStyle={{
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "var(--surface-raised)",
-                color: textColor,
-                fontSize: 12,
-              }}
+              contentStyle={tooltipStyle}
             />
             <Bar
-              dataKey="exemplares"
+              dataKey="qtd"
               name="Exemplares"
               fill="oklch(0.32 0.12 150)"
               radius={[0, 4, 4, 0]}
-              maxBarSize={20}
+              maxBarSize={28}
             />
           </BarChart>
         </ResponsiveContainer>
-        <p className="text-[10px] mt-2 text-center" style={{ color: "var(--text-disabled)" }}>
-          Dados mockados — visualização ilustrativa
-        </p>
       </div>
     </div>
   );
