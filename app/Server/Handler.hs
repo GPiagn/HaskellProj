@@ -33,6 +33,7 @@ type API =
   :<|> "exemplares" :> Capture "id" Int :> Delete '[JSON] Value
   -- Inventário e regra de negócio
   :<|> "inventario" :> ReqBody '[JSON] InventarioInput :> Post '[JSON] Value
+  :<|> "emprestimos" :> ReqBody '[JSON] EmprestimoInput :> Post '[JSON] Value
   :<|> "nao-encontrados" :> Get '[JSON] [ExemplarNaoEncontrado]
   :<|> "dashboard" :> "totais" :> Get '[JSON] DashboardTotais
   -- Saúde
@@ -47,6 +48,7 @@ server conn =
   :<|> handlePatchExemplar    conn
   :<|> handleDeleteExemplar   conn
   :<|> handleRegistrarInventario conn
+  :<|> handleRegistrarEmprestimo conn
   :<|> handleNaoEncontrados   conn
   :<|> handleDashboard        conn
   :<|> handlePing
@@ -121,6 +123,15 @@ handleRegistrarInventario conn (InventarioInput eid resultado obs) =
         , "msg"        .= ("Inventário registrado com sucesso" :: String)
         , "linhas"     .= affected
         ]
+
+handleRegistrarEmprestimo :: Connection -> EmprestimoInput -> Handler Value
+handleRegistrarEmprestimo conn (EmprestimoInput eid nome dEmp dPrev) = do
+  affected <- liftIO (DB.registrarEmprestimo conn eid nome dEmp dPrev)
+  return $ object
+    [ "exemplarId" .= eid
+    , "msg"        .= ("Empréstimo registrado com sucesso" :: String)
+    , "linhas"     .= affected
+    ]
 
 handleNaoEncontrados :: Connection -> Handler [ExemplarNaoEncontrado]
 handleNaoEncontrados conn = do

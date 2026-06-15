@@ -107,6 +107,17 @@ data InventarioInput = InventarioInput
 instance ToJSON InventarioInput
 instance FromJSON InventarioInput
 
+-- Payload para registrar um empréstimo (POST /emprestimos)
+data EmprestimoInput = EmprestimoInput
+  { empExemplarId     :: Int
+  , empNomePessoa     :: Text
+  , empDataEmprestimo :: Day
+  , empDataPrevista   :: Day
+  } deriving (Show, Generic)
+
+instance ToJSON EmprestimoInput
+instance FromJSON EmprestimoInput
+
 -- Totais do dashboard
 data DashboardTotais = DashboardTotais
   { totalExemplares      :: Int

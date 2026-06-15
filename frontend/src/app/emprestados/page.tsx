@@ -19,12 +19,13 @@ import {
   Inbox,
   AlertCircle,
   ClipboardList,
-  Pencil,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Exemplar } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 
 /* Nome do relatório do Pergamum que alimenta esta aba */
@@ -38,12 +39,11 @@ type Emprestado = {
   dataPrevista: string;
 };
 
-/* Resultado do cruzamento de cada empréstimo com o catálogo/inventário */
 type Categoria =
-  | "nao_cadastrado" // não existe no catálogo  → sinalizar para incluir
-  | "encontrado" // inventariado como encontrado → não mexe
-  | "nao_encontrado" // inventariado como não encontrado → atualizar observação
-  | "nao_inventariado"; // existe, mas sem inventário → sinalizar p/ depois
+  | "nao_cadastrado"
+  | "encontrado"
+  | "nao_encontrado"
+  | "nao_inventariado";
 
 type LinhaTratada = Emprestado & {
   exemplarId: number | null;
@@ -79,7 +79,16 @@ function exibeData(s: string): string {
   }).format(d);
 }
 
-/* dias de atraso em relação a hoje (0 = em dia / sem atraso) */
+/* Converte a data para ISO (aaaa-mm-dd), formato que o backend espera */
+function toISO(s: string): string | null {
+  const d = parseData(s);
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 function diasAtraso(dataPrevista: string): number | null {
   const prev = parseData(dataPrevista);
   if (!prev) return null;
@@ -90,21 +99,49 @@ function diasAtraso(dataPrevista: string): number | null {
   return diff > 0 ? diff : 0;
 }
 
+/* Registra o empréstimo no backend. As datas vão em ISO; o cálculo de
+   em dia/atraso é feito pelo backend (calcSituacao). */
+async function registrarEmprestimo(l: LinhaTratada) {
+  const dEmp = toISO(l.dataEmprestimo);
+  const dPrev = toISO(l.dataPrevista);
+  if (l.exemplarId == null) throw new Error("Exemplar sem id.");
+  if (!dEmp || !dPrev)
+    throw new Error("Datas do empréstimo inválidas (use dd/mm/aaaa).");
+  await api.emprestimos.registrar({
+    empExemplarId: l.exemplarId,
+    empNomePessoa: l.nome,
+    empDataEmprestimo: dEmp,
+    empDataPrevista: dPrev,
+  });
+}
+
 export default function EmprestadosPage() {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dados, setDados] = useState<Emprestado[]>([]);
   const [carregado, setCarregado] = useState(false);
 
-  /* Catálogo, para o cruzamento. null = ainda carregando */
   const [exemplares, setExemplares] = useState<Exemplar[] | null>(null);
   const catalogoCarregado = exemplares !== null;
 
-  /* Observações já aplicadas nesta sessão (por exemplarId) */
-  const [aplicadas, setAplicadas] = useState<Set<number>>(new Set());
-  const [aplicando, setAplicando] = useState(false);
+  /* Empréstimos já registrados nesta sessão (por exemplarId) */
+  const [registrados, setRegistrados] = useState<Set<number>>(new Set());
+  const [registrandoTodos, setRegistrandoTodos] = useState(false);
 
-  /* Carrega empréstimos salvos + catálogo */
+  /* Filtro por categoria (null = todos) */
+  const [filtro, setFiltro] = useState<Categoria | null>(null);
+  const alternarFiltro = (c: Categoria) =>
+    setFiltro((atual) => (atual === c ? null : c));
+
+  /* Diálogos */
+  const [invOpen, setInvOpen] = useState(false);
+  const [invLinha, setInvLinha] = useState<LinhaTratada | null>(null);
+  const [invModo, setInvModo] = useState<"inventariar" | "emprestimo">(
+    "inventariar"
+  );
+  const [incOpen, setIncOpen] = useState(false);
+  const [incLinha, setIncLinha] = useState<LinhaTratada | null>(null);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -134,7 +171,7 @@ export default function EmprestadosPage() {
 
   async function aoSelecionar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // permite reimportar o mesmo arquivo
+    e.target.value = "";
     if (!file) return;
 
     try {
@@ -149,8 +186,7 @@ export default function EmprestadosPage() {
 
       const norm = (v: unknown) => String(v ?? "").trim();
 
-      // Colunas (A = 0): D = 3, I = 8, J = 9, K = 10
-      // primeira linha é o cabeçalho → ignorada
+      // Colunas (A = 0): D = 3, I = 8, J = 9, K = 10  (1ª linha = cabeçalho)
       const lidos: Emprestado[] = [];
       for (const r of rows.slice(1)) {
         const exemplar = norm(r[8]); // coluna I
@@ -172,9 +208,10 @@ export default function EmprestadosPage() {
         return;
       }
 
-      persistir(lidos); // limpa os existentes e grava os novos
-      setAplicadas(new Set());
-      carregarCatalogo(); // recruza com o catálogo mais recente
+      persistir(lidos);
+      setRegistrados(new Set());
+      setFiltro(null);
+      carregarCatalogo();
       toast.success(
         `${lidos.length} emprestado${lidos.length !== 1 ? "s" : ""} carregado${lidos.length !== 1 ? "s" : ""}`,
         "Tabela atualizada a partir do relatório."
@@ -184,7 +221,7 @@ export default function EmprestadosPage() {
     }
   }
 
-  /* ─── Cruzamento (puro, recalculado quando dados/catálogo mudam) ─── */
+  /* ─── Cruzamento (puro) ─── */
   const catalogo = useMemo(() => {
     const m = new Map<string, Exemplar>();
     for (const ex of exemplares ?? []) m.set(chaveCatalogo(ex), ex);
@@ -232,44 +269,64 @@ export default function EmprestadosPage() {
     return c;
   }, [tratadas]);
 
-  /* Não encontrados ainda sem observação aplicada nesta sessão */
-  const pendentesObs = tratadas.filter(
+  /* Não encontrados que ainda não tiveram o empréstimo registrado */
+  const pendentesEmp = tratadas.filter(
     (t) =>
       t.categoria === "nao_encontrado" &&
       t.exemplarId != null &&
-      !aplicadas.has(t.exemplarId)
+      !registrados.has(t.exemplarId)
   );
 
-  async function aplicarObservacoes() {
-    setAplicando(true);
+  async function registrarTodos() {
+    setRegistrandoTodos(true);
     let ok = 0;
     let falhas = 0;
     try {
-      // sequencial: o backend usa uma conexão única
-      for (const t of pendentesObs) {
-        const obs = `${exibeData(t.dataEmprestimo)} - ${exibeData(t.dataPrevista)} - ${t.nome}`;
+      for (const t of pendentesEmp) {
         try {
-          await api.inventario.registrar({
-            invExemplarId: t.exemplarId as number,
-            invResultado: "nao_encontrado",
-            invObservacao: obs,
-          });
-          setAplicadas((prev) => new Set(prev).add(t.exemplarId as number));
+          await registrarEmprestimo(t);
+          setRegistrados((prev) => new Set(prev).add(t.exemplarId as number));
           ok++;
         } catch {
           falhas++;
         }
       }
       toast.success(
-        `${ok} observação${ok !== 1 ? "ões" : ""} atualizada${ok !== 1 ? "s" : ""}`,
-        falhas ? `${falhas} com erro` : "No inventário de não encontrados."
+        `${ok} empréstimo${ok !== 1 ? "s" : ""} registrado${ok !== 1 ? "s" : ""}`,
+        falhas
+          ? `${falhas} com erro (datas inválidas?)`
+          : "Já aparecem como emprestados nos Não Encontrados."
       );
     } finally {
-      setAplicando(false);
+      setRegistrandoTodos(false);
     }
   }
 
+  /* Callbacks dos diálogos */
+  function abrirInventariar(linha: LinhaTratada) {
+    setInvLinha(linha);
+    setInvModo("inventariar");
+    setInvOpen(true);
+  }
+  function abrirEmprestimo(linha: LinhaTratada) {
+    setInvLinha(linha);
+    setInvModo("emprestimo");
+    setInvOpen(true);
+  }
+  function abrirIncluir(linha: LinhaTratada) {
+    setIncLinha(linha);
+    setIncOpen(true);
+  }
+  function aoSalvarInventario(exemplarId: number, resultado: string) {
+    if (resultado === "nao_encontrado")
+      setRegistrados((prev) => new Set(prev).add(exemplarId));
+    carregarCatalogo();
+  }
+
   const temDados = dados.length > 0;
+  const visiveis = filtro
+    ? tratadas.filter((t) => t.categoria === filtro)
+    : tratadas;
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -314,7 +371,6 @@ export default function EmprestadosPage() {
       </div>
 
       {!carregado ? null : !temDados ? (
-        /* Estado vazio */
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -352,7 +408,7 @@ export default function EmprestadosPage() {
           transition={{ duration: 0.25 }}
           className="card p-0 overflow-hidden"
         >
-          {/* Resumo do tratamento */}
+          {/* Resumo do tratamento (chips clicáveis = filtro) */}
           <div
             className="flex flex-wrap items-center gap-3 p-4"
             style={{ borderBottom: "1px solid var(--border)" }}
@@ -371,41 +427,72 @@ export default function EmprestadosPage() {
             ) : (
               <>
                 {cont.nao_cadastrado > 0 && (
-                  <Badge variant="warning">
+                  <ChipFiltro
+                    ativo={filtro === "nao_cadastrado"}
+                    apagado={filtro !== null && filtro !== "nao_cadastrado"}
+                    variant="warning"
+                    onClick={() => alternarFiltro("nao_cadastrado")}
+                  >
                     <AlertCircle size={10} />
                     {cont.nao_cadastrado} a cadastrar
-                  </Badge>
+                  </ChipFiltro>
                 )}
                 {cont.encontrado > 0 && (
-                  <Badge variant="success">
+                  <ChipFiltro
+                    ativo={filtro === "encontrado"}
+                    apagado={filtro !== null && filtro !== "encontrado"}
+                    variant="success"
+                    onClick={() => alternarFiltro("encontrado")}
+                  >
                     <CheckCircle2 size={10} />
                     {cont.encontrado} encontrado
                     {cont.encontrado !== 1 ? "s" : ""}
-                  </Badge>
+                  </ChipFiltro>
                 )}
                 {cont.nao_encontrado > 0 && (
-                  <Badge variant="danger">
-                    <Pencil size={10} />
+                  <ChipFiltro
+                    ativo={filtro === "nao_encontrado"}
+                    apagado={filtro !== null && filtro !== "nao_encontrado"}
+                    variant="danger"
+                    onClick={() => alternarFiltro("nao_encontrado")}
+                  >
+                    <ArrowLeftRight size={10} />
                     {cont.nao_encontrado} não encontrado
                     {cont.nao_encontrado !== 1 ? "s" : ""}
-                  </Badge>
+                  </ChipFiltro>
                 )}
                 {cont.nao_inventariado > 0 && (
-                  <Badge variant="outline">
+                  <ChipFiltro
+                    ativo={filtro === "nao_inventariado"}
+                    apagado={filtro !== null && filtro !== "nao_inventariado"}
+                    variant="outline"
+                    onClick={() => alternarFiltro("nao_inventariado")}
+                  >
                     <ClipboardList size={10} />
                     {cont.nao_inventariado} a inventariar
-                  </Badge>
+                  </ChipFiltro>
                 )}
 
-                {pendentesObs.length > 0 && (
+                {filtro && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltro(null)}
+                    className="text-xs underline underline-offset-2"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    ver todos
+                  </button>
+                )}
+
+                {pendentesEmp.length > 0 && (
                   <Button
                     size="sm"
                     className="ml-auto"
-                    loading={aplicando}
-                    onClick={aplicarObservacoes}
+                    loading={registrandoTodos}
+                    onClick={registrarTodos}
                   >
-                    <Pencil size={13} strokeWidth={2} />
-                    Atualizar observação ({pendentesObs.length})
+                    <ArrowLeftRight size={13} strokeWidth={2} />
+                    Registrar empréstimos ({pendentesEmp.length})
                   </Button>
                 )}
               </>
@@ -431,96 +518,131 @@ export default function EmprestadosPage() {
                 </tr>
               </thead>
               <tbody>
-                {tratadas.map((t, i) => (
-                  <tr
-                    key={`${t.exemplar}-${i}`}
-                    style={{
-                      borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <td className="p-3">
-                      <div
-                        className="font-mono"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {t.exemplar || "—"}
-                      </div>
-                      {t.titulo && (
-                        <div
-                          className="text-xs mt-0.5 truncate max-w-[220px]"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          {t.titulo}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3">{t.nome || "—"}</td>
-                    <td className="p-3 tabular-nums">
-                      {exibeData(t.dataEmprestimo)}
-                    </td>
-                    <td className="p-3 tabular-nums">
-                      <span className="inline-flex items-center gap-1.5">
-                        <ArrowRight
-                          size={11}
-                          style={{ color: "var(--text-muted)" }}
-                        />
-                        <span
-                          style={{
-                            color:
-                              t.atraso && t.atraso > 0
-                                ? "var(--danger)"
-                                : "var(--text-secondary)",
-                          }}
-                        >
-                          {exibeData(t.dataPrevista)}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      {t.atraso === null ? (
-                        <span style={{ color: "var(--text-muted)" }}>—</span>
-                      ) : t.atraso > 0 ? (
-                        <Badge variant="danger">
-                          <Clock size={10} />
-                          {t.atraso} {t.atraso === 1 ? "dia" : "dias"}
-                        </Badge>
-                      ) : (
-                        <Badge variant="warning">
-                          <CheckCircle2 size={10} />
-                          Em dia
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      <TratamentoCell
-                        categoria={t.categoria}
-                        carregado={catalogoCarregado}
-                        aplicada={
-                          t.exemplarId != null && aplicadas.has(t.exemplarId)
-                        }
-                      />
+                {visiveis.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="p-8 text-center text-sm"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Nenhum item nesta categoria.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  visiveis.map((t, i) => (
+                    <tr
+                      key={`${t.exemplar}-${i}`}
+                      style={{
+                        borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <td className="p-3">
+                        <div
+                          className="font-mono"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {t.exemplar || "—"}
+                        </div>
+                        {t.titulo && (
+                          <div
+                            className="text-xs mt-0.5 truncate max-w-[220px]"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {t.titulo}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3">{t.nome || "—"}</td>
+                      <td className="p-3 tabular-nums">
+                        {exibeData(t.dataEmprestimo)}
+                      </td>
+                      <td className="p-3 tabular-nums">
+                        <span className="inline-flex items-center gap-1.5">
+                          <ArrowRight
+                            size={11}
+                            style={{ color: "var(--text-muted)" }}
+                          />
+                          <span
+                            style={{
+                              color:
+                                t.atraso && t.atraso > 0
+                                  ? "var(--danger)"
+                                  : "var(--text-secondary)",
+                            }}
+                          >
+                            {exibeData(t.dataPrevista)}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {t.atraso === null ? (
+                          <span style={{ color: "var(--text-muted)" }}>—</span>
+                        ) : t.atraso > 0 ? (
+                          <Badge variant="danger">
+                            <Clock size={10} />
+                            {t.atraso} {t.atraso === 1 ? "dia" : "dias"}
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning">
+                            <CheckCircle2 size={10} />
+                            Em dia
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <TratamentoAcao
+                          linha={t}
+                          carregado={catalogoCarregado}
+                          registrado={
+                            t.exemplarId != null && registrados.has(t.exemplarId)
+                          }
+                          onInventariar={() => abrirInventariar(t)}
+                          onEmprestimo={() => abrirEmprestimo(t)}
+                          onIncluir={() => abrirIncluir(t)}
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </motion.div>
       )}
+
+      <InventarioDialog
+        open={invOpen}
+        linha={invLinha}
+        modo={invModo}
+        onClose={() => setInvOpen(false)}
+        onSaved={aoSalvarInventario}
+      />
+      <IncluirExemplarDialog
+        open={incOpen}
+        linha={incLinha}
+        onClose={() => setIncOpen(false)}
+        onSaved={carregarCatalogo}
+      />
     </div>
   );
 }
 
-/* ─── Célula de tratamento por categoria ─── */
-function TratamentoCell({
-  categoria,
+/* ─── Botão de tratamento por categoria ─── */
+function TratamentoAcao({
+  linha,
   carregado,
-  aplicada,
+  registrado,
+  onInventariar,
+  onEmprestimo,
+  onIncluir,
 }: {
-  categoria: Categoria;
+  linha: LinhaTratada;
   carregado: boolean;
-  aplicada: boolean;
+  registrado: boolean;
+  onInventariar: () => void;
+  onEmprestimo: () => void;
+  onIncluir: () => void;
 }) {
   if (!carregado)
     return (
@@ -529,13 +651,13 @@ function TratamentoCell({
       </span>
     );
 
-  switch (categoria) {
+  switch (linha.categoria) {
     case "nao_cadastrado":
       return (
-        <Badge variant="warning">
-          <AlertCircle size={10} />
+        <Button variant="outline" size="sm" onClick={onIncluir}>
+          <AlertCircle size={13} strokeWidth={2} />
           Não cadastrado — incluir
-        </Badge>
+        </Button>
       );
     case "encontrado":
       return (
@@ -545,23 +667,377 @@ function TratamentoCell({
         </Badge>
       );
     case "nao_encontrado":
-      return aplicada ? (
+      return registrado ? (
         <Badge variant="success">
           <CheckCircle2 size={10} />
-          Observação atualizada
+          Empréstimo registrado
         </Badge>
       ) : (
-        <Badge variant="danger">
-          <Pencil size={10} />
-          Atualizar observação
-        </Badge>
+        <Button variant="outline" size="sm" onClick={onEmprestimo}>
+          <ArrowLeftRight size={13} strokeWidth={2} />
+          Registrar empréstimo
+        </Button>
       );
     case "nao_inventariado":
       return (
-        <Badge variant="outline">
-          <ClipboardList size={10} />
+        <Button variant="outline" size="sm" onClick={onInventariar}>
+          <ClipboardList size={13} strokeWidth={2} />
           Inventariar depois
-        </Badge>
+        </Button>
       );
   }
+}
+
+/* ─── Chip clicável do resumo (atua como filtro) ─── */
+function ChipFiltro({
+  ativo,
+  apagado,
+  variant,
+  onClick,
+  children,
+}: {
+  ativo: boolean;
+  apagado: boolean;
+  variant: "success" | "warning" | "danger" | "outline";
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className="rounded-full transition-all"
+      style={{
+        outline: ativo ? "2px solid var(--brand)" : "2px solid transparent",
+        outlineOffset: 2,
+        opacity: apagado ? 0.45 : 1,
+      }}
+    >
+      <Badge variant={variant}>{children}</Badge>
+    </button>
+  );
+}
+
+/* ─── Resumo do item, reutilizado nos diálogos ─── */
+function ResumoItem({ linha }: { linha: LinhaTratada }) {
+  return (
+    <div
+      className="rounded-lg p-3 text-xs space-y-1"
+      style={{
+        backgroundColor: "var(--surface)",
+        border: "1px solid var(--border)",
+        color: "var(--text-secondary)",
+      }}
+    >
+      <div>
+        <span style={{ color: "var(--text-muted)" }}>Exemplar: </span>
+        <span className="font-mono" style={{ color: "var(--text-primary)" }}>
+          {linha.exemplar}
+        </span>
+        {linha.titulo && (
+          <span style={{ color: "var(--text-muted)" }}> · {linha.titulo}</span>
+        )}
+      </div>
+      <div>
+        <span style={{ color: "var(--text-muted)" }}>Aluno: </span>
+        {linha.nome || "—"}
+      </div>
+      <div>
+        <span style={{ color: "var(--text-muted)" }}>Período: </span>
+        {exibeData(linha.dataEmprestimo)} → {exibeData(linha.dataPrevista)}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Diálogo de inventário / registro de empréstimo ─── */
+function InventarioDialog({
+  open,
+  linha,
+  modo,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  linha: LinhaTratada | null;
+  modo: "inventariar" | "emprestimo";
+  onClose: () => void;
+  onSaved: (exemplarId: number, resultado: string) => void;
+}) {
+  const toast = useToast();
+  const [resultado, setResultado] = useState<"" | "encontrado" | "nao_encontrado">("");
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (!open || !linha) return;
+    setResultado(modo === "emprestimo" ? "nao_encontrado" : "");
+  }, [open, linha, modo]);
+
+  const vaiRegistrarEmp =
+    modo === "emprestimo" || resultado === "nao_encontrado";
+  const podeSalvar =
+    !!linha && linha.exemplarId != null && (modo === "emprestimo" || resultado !== "");
+
+  async function salvar() {
+    if (!linha || linha.exemplarId == null) return;
+    setSalvando(true);
+    try {
+      if (modo === "inventariar") {
+        if (resultado === "") return;
+        const obsEmp = `${exibeData(linha.dataEmprestimo)} - ${exibeData(linha.dataPrevista)} - ${linha.nome}`;
+        await api.inventario.registrar({
+          invExemplarId: linha.exemplarId,
+          invResultado: resultado,
+          invObservacao: resultado === "nao_encontrado" ? obsEmp : null,
+        });
+        if (resultado === "nao_encontrado") await registrarEmprestimo(linha);
+      } else {
+        await registrarEmprestimo(linha);
+      }
+      toast.success(
+        modo === "emprestimo" ? "Empréstimo registrado" : "Inventário registrado",
+        vaiRegistrarEmp
+          ? "Já aparece como emprestado nos Não Encontrados."
+          : "Marcado como encontrado."
+      );
+      onSaved(linha.exemplarId, modo === "emprestimo" ? "nao_encontrado" : resultado);
+      onClose();
+    } catch (e) {
+      toast.error("Erro ao registrar", e instanceof Error ? e.message : undefined);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title={modo === "emprestimo" ? "Registrar empréstimo" : "Registrar inventário"}
+      size="md"
+    >
+      {linha && (
+        <div className="space-y-4">
+          <ResumoItem linha={linha} />
+
+          {modo === "inventariar" && (
+            <div className="space-y-1.5">
+              <label
+                className="text-xs font-medium"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Resultado do inventário
+              </label>
+              <div className="flex gap-2">
+                <OpcaoResultado
+                  ativo={resultado === "encontrado"}
+                  cor="var(--success)"
+                  onClick={() => setResultado("encontrado")}
+                >
+                  <CheckCircle2 size={14} />
+                  Encontrado
+                </OpcaoResultado>
+                <OpcaoResultado
+                  ativo={resultado === "nao_encontrado"}
+                  cor="var(--danger)"
+                  onClick={() => setResultado("nao_encontrado")}
+                >
+                  <AlertCircle size={14} />
+                  Não encontrado
+                </OpcaoResultado>
+              </div>
+            </div>
+          )}
+
+          {vaiRegistrarEmp && (
+            <p
+              className="text-xs rounded-lg p-2.5"
+              style={{
+                backgroundColor: "var(--brand-subtle)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Será registrado o empréstimo de <strong>{linha.nome || "—"}</strong>{" "}
+              com devolução prevista em {exibeData(linha.dataPrevista)}. O sistema
+              calcula automaticamente se está em dia ou atrasado.
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              loading={salvando}
+              disabled={!podeSalvar}
+              onClick={salvar}
+            >
+              Salvar
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function OpcaoResultado({
+  ativo,
+  cor,
+  onClick,
+  children,
+}: {
+  ativo: boolean;
+  cor: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-1 flex items-center justify-center gap-1.5 h-9 px-3 text-sm rounded-lg transition-colors"
+      style={{
+        backgroundColor: ativo ? cor : "var(--surface)",
+        border: `1px solid ${ativo ? cor : "var(--border)"}`,
+        color: ativo ? "oklch(0.98 0 0)" : "var(--text-secondary)",
+        fontWeight: ativo ? 600 : 400,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ─── Diálogo de criar exemplar ─── */
+function IncluirExemplarDialog({
+  open,
+  linha,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  linha: LinhaTratada | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [codigo, setCodigo] = useState("");
+  const [titulo, setTitulo] = useState("");
+  const [autor, setAutor] = useState("");
+  const [classificacao, setClassificacao] = useState("");
+  const [tipoObra, setTipoObra] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (!open || !linha) return;
+    setCodigo(linha.exemplar);
+    setTitulo("");
+    setAutor("");
+    setClassificacao("");
+    setTipoObra("");
+  }, [open, linha]);
+
+  const podeSalvar = codigo.trim() !== "" && titulo.trim() !== "";
+
+  async function salvar() {
+    if (!podeSalvar) return;
+    setSalvando(true);
+    try {
+      await api.exemplares.create({
+        inpCodigo: codigo.trim(),
+        inpTitulo: titulo.trim(),
+        inpAutor: autor.trim() || null,
+        inpClassificacao: classificacao.trim() || null,
+        inpTipoObra: tipoObra.trim() || null,
+        inpSituacaoSistema: "Normal",
+        inpNumeroAcervo: null,
+        inpNumeroExemplar: null,
+        inpModoAquisicao: null,
+        inpDataAquisicao: null,
+      });
+      toast.success("Exemplar criado", "Agora ele pode ser inventariado.");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error("Erro ao criar", e instanceof Error ? e.message : undefined);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const campo = (
+    label: string,
+    valor: string,
+    set: (v: string) => void,
+    required = false,
+    placeholder = ""
+  ) => (
+    <div className="space-y-1.5">
+      <label
+        className="text-xs font-medium"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        {label}
+        {required && <span style={{ color: "var(--danger)" }}> *</span>}
+      </label>
+      <Input
+        value={valor}
+        onChange={(e) => set(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+      title="Incluir exemplar no catálogo"
+      size="md"
+    >
+      {linha && (
+        <div className="space-y-4">
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Este exemplar está no relatório de emprestados mas não existe no
+            catálogo. Preencha ao menos o título para cadastrá-lo.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            {campo("Tombo", codigo, setCodigo, true, "ex: 1455")}
+            {campo("Tipo de material", tipoObra, setTipoObra, false, "ex: Livro")}
+          </div>
+          {campo("Título", titulo, setTitulo, true, "Nome completo da obra")}
+          {campo("Autor", autor, setAutor, false, "Nome do autor")}
+          {campo(
+            "Classificação",
+            classificacao,
+            setClassificacao,
+            false,
+            "ex: 611.8 M1491n"
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              loading={salvando}
+              disabled={!podeSalvar}
+              onClick={salvar}
+            >
+              Criar exemplar
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
 }

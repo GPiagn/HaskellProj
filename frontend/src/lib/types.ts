@@ -50,6 +50,13 @@ export type InventarioInput = {
   invObservacao: string | null;
 };
 
+export type EmprestimoInput = {
+  empExemplarId: number;
+  empNomePessoa: string;
+  empDataEmprestimo: string; // ISO: aaaa-mm-dd
+  empDataPrevista: string; // ISO: aaaa-mm-dd
+};
+
 export type SituacaoEmprestimo =
   | { tag: "EmDia" }
   | { tag: "Atrasado"; diasAtraso: number };

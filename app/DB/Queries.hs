@@ -89,6 +89,22 @@ registrarInventario conn eid resultado obs =
     (eid, resultado, obs)
 
 -- ============================================================
+-- Queries de Empréstimos
+-- ============================================================
+
+-- Registra um empréstimo para um exemplar. Remove empréstimos anteriores
+-- do mesmo exemplar antes de inserir, para que reimportar o relatório não
+-- gere duplicatas (a regra de negócio considera o empréstimo vigente).
+registrarEmprestimo :: Connection -> Int -> Text -> Day -> Day -> IO Int64
+registrarEmprestimo conn eid nome dEmp dPrev = do
+  _ <- execute conn
+    "DELETE FROM emprestimos WHERE exemplar_id = ?" (Only eid)
+  execute conn
+    "INSERT INTO emprestimos (exemplar_id, nome_pessoa, data_emprestimo, data_prevista) \
+    \ VALUES (?, ?, ?, ?)"
+    (eid, nome, dEmp, dPrev)
+
+-- ============================================================
 -- Tipo auxiliar e queries para "não encontrados"
 -- ============================================================
 

@@ -90,6 +90,7 @@ export default function NaoEncontradosPage() {
   const [items, setItems] = useState<ExemplarNaoEncontrado[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filtro, setFiltro] = useState<"emprestados" | "atraso" | null>(null);
   const toast = useToast();
 
   async function load(showRefresh = false) {
@@ -114,6 +115,17 @@ export default function NaoEncontradosPage() {
       i.neMotivo.situacao.tag === "Atrasado"
   );
   const outroMotivo = items.filter((i) => i.neMotivo.tag === "OutroMotivo");
+
+  // Seções visíveis conforme o filtro ativo
+  const showAtraso =
+    filtro === null || filtro === "atraso" || filtro === "emprestados";
+  const showEmDia = filtro === null || filtro === "emprestados";
+  const showOutros = filtro === null;
+  const emDiaCount = emprestados.length - atrasados.length;
+  const nadaVisivel =
+    !(showAtraso && atrasados.length > 0) &&
+    !(showEmDia && emDiaCount > 0) &&
+    !(showOutros && outroMotivo.length > 0);
 
   return (
     <div className="space-y-6">
@@ -143,49 +155,72 @@ export default function NaoEncontradosPage() {
         </Button>
       </div>
 
-      {/* Summary strip */}
+      {/* Summary strip (cards clicáveis = filtro) */}
       {!loading && items.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           className="grid grid-cols-3 gap-3"
         >
-          {[
-            {
-              label: "Total ausentes",
-              value: items.length,
-              color: "var(--text-primary)",
-              bg: "var(--surface)",
-            },
-            {
-              label: "Emprestados",
-              value: emprestados.length,
-              color: "var(--warning)",
-              bg: "var(--warning-subtle)",
-            },
-            {
-              label: "Com atraso",
-              value: atrasados.length,
-              color: "var(--danger)",
-              bg: "var(--danger-subtle)",
-            },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-xl p-3 text-center"
-              style={{ backgroundColor: s.bg, border: "1px solid var(--border-subtle)" }}
-            >
-              <p
-                className="text-2xl font-bold font-display tabular-nums"
-                style={{ color: s.color }}
+          {(
+            [
+              {
+                key: null,
+                label: "Total ausentes",
+                value: items.length,
+                color: "var(--text-primary)",
+                bg: "var(--surface)",
+                ring: "var(--text-muted)",
+              },
+              {
+                key: "emprestados",
+                label: "Emprestados",
+                value: emprestados.length,
+                color: "var(--warning)",
+                bg: "var(--warning-subtle)",
+                ring: "var(--warning)",
+              },
+              {
+                key: "atraso",
+                label: "Com atraso",
+                value: atrasados.length,
+                color: "var(--danger)",
+                bg: "var(--danger-subtle)",
+                ring: "var(--danger)",
+              },
+            ] as const
+          ).map((s) => {
+            const ativo = filtro === s.key;
+            return (
+              <button
+                key={s.label}
+                type="button"
+                aria-pressed={ativo}
+                onClick={() =>
+                  setFiltro(
+                    s.key === null ? null : filtro === s.key ? null : s.key
+                  )
+                }
+                className="rounded-xl p-3 text-center transition-all cursor-pointer"
+                style={{
+                  backgroundColor: s.bg,
+                  border: `1px solid ${ativo ? s.ring : "var(--border-subtle)"}`,
+                  outline: ativo ? `2px solid ${s.ring}` : "2px solid transparent",
+                  outlineOffset: 1,
+                }}
               >
-                {s.value}
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                {s.label}
-              </p>
-            </div>
-          ))}
+                <p
+                  className="text-2xl font-bold font-display tabular-nums"
+                  style={{ color: s.color }}
+                >
+                  {s.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {s.label}
+                </p>
+              </button>
+            );
+          })}
         </motion.div>
       )}
 
@@ -236,7 +271,7 @@ export default function NaoEncontradosPage() {
       {!loading && items.length > 0 && (
         <div className="card overflow-hidden">
           {/* Atrasados first */}
-          {atrasados.length > 0 && (
+          {showAtraso && atrasados.length > 0 && (
             <div>
               <div
                 className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest flex items-center gap-2"
@@ -256,7 +291,7 @@ export default function NaoEncontradosPage() {
           )}
 
           {/* Emprestados (em dia) */}
-          {emprestados.length - atrasados.length > 0 && (
+          {showEmDia && emDiaCount > 0 && (
             <div>
               <div
                 className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest flex items-center gap-2"
@@ -268,7 +303,7 @@ export default function NaoEncontradosPage() {
                 }}
               >
                 <Clock size={11} />
-                Emprestados — em dia ({emprestados.length - atrasados.length})
+                Emprestados — em dia ({emDiaCount})
               </div>
               {emprestados
                 .filter((i) => i.neMotivo.tag === "Emprestado" && i.neMotivo.situacao.tag !== "Atrasado")
@@ -279,7 +314,7 @@ export default function NaoEncontradosPage() {
           )}
 
           {/* Outro motivo */}
-          {outroMotivo.length > 0 && (
+          {showOutros && outroMotivo.length > 0 && (
             <div>
               <div
                 className="px-4 py-2 text-[10px] font-semibold uppercase tracking-widest"
@@ -296,6 +331,23 @@ export default function NaoEncontradosPage() {
               {outroMotivo.map((item, i) => (
                 <NaoEncontradoRow key={item.neExemplarId} item={item} index={i} />
               ))}
+            </div>
+          )}
+
+          {/* Filtro sem resultados */}
+          {nadaVisivel && (
+            <div className="p-8 text-center">
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Nenhum item nesta categoria.
+              </p>
+              <button
+                type="button"
+                onClick={() => setFiltro(null)}
+                className="text-xs underline underline-offset-2 mt-1"
+                style={{ color: "var(--text-muted)" }}
+              >
+                ver todos
+              </button>
             </div>
           )}
         </div>

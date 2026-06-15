@@ -4,6 +4,7 @@ import type {
   ExemplarPatch,
   DashboardTotais,
   InventarioInput,
+  EmprestimoInput,
   ExemplarNaoEncontrado,
 } from "./types";
 
@@ -58,6 +59,14 @@ export const api = {
         { method: "POST", body: JSON.stringify(data) }
       ),
     naoEncontrados: () => req<ExemplarNaoEncontrado[]>("/nao-encontrados"),
+  },
+
+  emprestimos: {
+    registrar: (data: EmprestimoInput) =>
+      req<{ exemplarId: number; msg: string; linhas: number }>(
+        "/emprestimos",
+        { method: "POST", body: JSON.stringify(data) }
+      ),
   },
 
   dashboard: {
