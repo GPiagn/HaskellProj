@@ -9,12 +9,9 @@ import {
   ClipboardList,
   AlertTriangle,
   ArrowLeftRight,
-  BarChart3,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Landmark,
-  Lock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,7 +20,6 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   badge?: string;
-  comingSoon?: boolean;
 };
 
 const NAV: NavItem[] = [
@@ -36,12 +32,7 @@ const NAV: NavItem[] = [
     badge: String(new Date().getFullYear()),
   },
   { href: "/nao-encontrados", label: "Não Encontrados", icon: AlertTriangle },
-];
-
-const NAV_SOON: NavItem[] = [
-  { href: "#", label: "Empréstimos", icon: ArrowLeftRight, comingSoon: true },
-  { href: "#", label: "Relatórios", icon: BarChart3, comingSoon: true },
-  { href: "#", label: "Configurações", icon: Settings, comingSoon: true },
+  { href: "/emprestados", label: "Emprestados", icon: ArrowLeftRight },
 ];
 
 export function Sidebar({
@@ -125,45 +116,6 @@ export function Sidebar({
             );
           })}
         </ul>
-
-        {/* Em breve */}
-        <div className="mt-5">
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="px-3 mb-1.5 text-[9px] font-bold uppercase tracking-[0.12em]"
-                style={{ color: "var(--sidebar-label-text)" }}
-              >
-                Em breve
-              </motion.p>
-            )}
-          </AnimatePresence>
-          {collapsed && (
-            <div
-              className="mx-auto mb-2"
-              style={{
-                width: 20,
-                height: 1,
-                backgroundColor: "var(--sidebar-border)",
-              }}
-            />
-          )}
-          <ul className="space-y-0.5" role="list">
-            {NAV_SOON.map((item) => (
-              <li key={item.label}>
-                <NavLink
-                  item={item}
-                  active={false}
-                  collapsed={collapsed}
-                  disabled
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
       </nav>
 
       {/* ─── Ano do inventário (indicator) ─── */}
@@ -236,15 +188,13 @@ function NavLink({
   item,
   active,
   collapsed,
-  disabled = false,
 }: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
-  disabled?: boolean;
 }) {
   const Icon = item.icon;
-  const cls = `nav-item${active ? " nav-item--active" : ""}${disabled ? " nav-item--disabled" : ""}`;
+  const cls = `nav-item${active ? " nav-item--active" : ""}`;
 
   const inner = (
     <>
@@ -255,13 +205,6 @@ function NavLink({
           strokeWidth={active ? 2.2 : 1.8}
           style={{ transition: "stroke-width 0.15s" }}
         />
-        {disabled && collapsed && (
-          <Lock
-            size={8}
-            className="absolute -top-0.5 -right-0.5"
-            style={{ color: "var(--sidebar-label-text)" }}
-          />
-        )}
       </span>
 
       {/* Label + optional badge */}
@@ -289,25 +232,11 @@ function NavLink({
                 {item.badge}
               </span>
             )}
-
-            {/* "em breve" label */}
-            {disabled && (
-              <span
-                className="ml-auto text-[9px] font-medium"
-                style={{ color: "var(--sidebar-label-text)" }}
-              >
-                breve
-              </span>
-            )}
           </motion.span>
         )}
       </AnimatePresence>
     </>
   );
-
-  if (disabled) {
-    return <span className={cls}>{inner}</span>;
-  }
 
   return (
     <Link
