@@ -311,7 +311,7 @@ export default function DashboardPage() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.25, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           >
-            <InventarioChart />
+            <InventarioChart totais={data} />
           </motion.div>
         </div>
       </div>
