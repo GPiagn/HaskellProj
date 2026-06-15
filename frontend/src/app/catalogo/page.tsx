@@ -344,17 +344,9 @@ function BookRow({
         outlineOffset: 2,
       }}
     >
-     {/* Checkbox + capa */}
+     {/* Checkbox */}
       <td className="py-2.5 pl-4 pr-2">
-        <div className="flex items-center gap-2.5">
-          <SelectCheckbox checked={selected} onChange={onToggleSelect} />
-          <div
-            className="overflow-hidden flex-shrink-0 rounded-md"
-            style={{ width: 36, height: 48 }}
-          >
-            <BookCover titulo={exemplar.titulo} small />
-          </div>
-        </div>
+        <SelectCheckbox checked={selected} onChange={onToggleSelect} />
       </td>
 
       {/* Title + code */}
@@ -630,6 +622,10 @@ type LinhaImport = {
   inpClassificacao: string | null;
   inpTipoObra: string | null;
   inpSituacaoSistema: string | null;
+  inpNumeroAcervo: number | null;
+  inpNumeroExemplar: number | null;
+  inpModoAquisicao: string | null;
+  inpDataAquisicao: string | null;
 };
 
 function ImportarPergamum({
@@ -643,6 +639,7 @@ function ImportarPergamum({
   existentes: Set<string>;
   onDone: () => void;
 }) {
+  const toast = useToast();
   const [linhas, setLinhas] = useState<LinhaImport[]>([]);
   const [importando, setImportando] = useState(false);
   const [erro, setErro] = useState("");
@@ -668,8 +665,26 @@ function ImportarPergamum({
 
       // Colunas (A=0): B=1, E=4, F=5, G=6, H=7, P=15, AA=26, AP=41
       const norm = (v: unknown) => String(v ?? "").trim();
+      const toInt = (v: unknown): number | null => {
+        const s = String(v ?? "").replace(/\D/g, ""); // só dígitos
+        return s === "" ? null : Number(s);
+      };
+
+      const toData = (v: unknown): string | null => {
+        const s = String(v ?? "").trim();
+        if (!s) return null;
+        // dd/mm/aaaa  →  aaaa-mm-dd
+        const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (m) {
+          const [, d, mes, a] = m;
+          return `${a}-${mes.padStart(2, "0")}-${d.padStart(2, "0")}`;
+        }
+        // já em aaaa-mm-dd
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        return null; // formato desconhecido → ignora a data
+      };
       const parsed: LinhaImport[] = [];
-      for (const r of rows) {
+      for (const r of rows.slice(1)) {
         const codigo = norm(r[1]);
         const principal = norm(r[5]) || norm(r[6]); // título: F ou G
         if (!codigo || !principal) continue;        // pula cabeçalhos/vazios
@@ -682,6 +697,10 @@ function ImportarPergamum({
           inpClassificacao: norm(r[15]) || null,
           inpTipoObra: norm(r[26]) || null,
           inpSituacaoSistema: norm(r[41]) || null,
+          inpNumeroAcervo: toInt(r[0]),    // coluna A
+          inpNumeroExemplar: toInt(r[30]), // coluna AE
+          inpModoAquisicao: norm(r[3]) || null, // coluna D
+          inpDataAquisicao: toData(r[35]),  // coluna AJ
         });
       }
 
@@ -704,13 +723,7 @@ function ImportarPergamum({
     try {
       for (const l of novos) {
         try {
-          await api.exemplares.create({
-            ...l,
-            inpNumeroAcervo: null,
-            inpNumeroExemplar: null,
-            inpModoAquisicao: null,
-            inpDataAquisicao: null,
-          });
+          await api.exemplares.create(l);
           ok++;
         } catch {
           falhas++;
@@ -834,7 +847,6 @@ export default function CatalogoPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [exemplares, setExemplares] = useState<Exemplar[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<ViewMode>("grid");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [tipoFilter, setTipoFilter] = useState<string>("");
@@ -852,8 +864,7 @@ export default function CatalogoPage() {
   const toast = useToast();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
-  const [naoEncOpen, setNaoEncOpen] = useState(false);
-  const [naoEncObs, setNaoEncObs] = useState("");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -990,6 +1001,25 @@ export default function CatalogoPage() {
     setSelected(new Set());
   }
 
+  async function bulkDelete() {
+    setBulkSaving(true);
+    try {
+      const ids = Array.from(selected);
+      for (const id of ids) {
+        await api.exemplares.delete(id);
+      }
+      toast.success(
+        `${ids.length} ${ids.length === 1 ? "exemplar excluído" : "exemplares excluídos"}`
+      );
+      clearSelection();
+      setBulkDeleteOpen(false);
+      await load();
+    } catch (e) {
+      toast.error("Erro ao excluir", e instanceof Error ? e.message : undefined);
+    } finally {
+      setBulkSaving(false);
+    }
+  }
   async function bulkMark(
     resultado: "encontrado" | "nao_encontrado",
     obs: string | null
@@ -1010,8 +1040,6 @@ export default function CatalogoPage() {
         `${ids.length} ${ids.length === 1 ? "exemplar atualizado" : "exemplares atualizados"}`
       );
       clearSelection();
-      setNaoEncOpen(false);
-      setNaoEncObs("");
       await load();
     } catch (e) {
       toast.error("Erro ao atualizar", e instanceof Error ? e.message : undefined);
@@ -1141,35 +1169,6 @@ export default function CatalogoPage() {
         </button>
 
         {/* View toggle */}
-        <div
-          className="flex items-center p-0.5 rounded-lg"
-          style={{
-            backgroundColor: "var(--surface)",
-            border: "1px solid var(--border)",
-          }}
-          role="group"
-          aria-label="Modo de visualização"
-        >
-          {(["grid", "list"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className="p-2 rounded-md transition-all duration-150"
-              style={{
-                backgroundColor: view === v ? "var(--brand-subtle)" : "transparent",
-                color: view === v ? "var(--brand)" : "var(--text-muted)",
-              }}
-              aria-pressed={view === v}
-              aria-label={v === "grid" ? "Grade" : "Lista"}
-            >
-              {v === "grid" ? (
-                <LayoutGrid size={14} />
-              ) : (
-                <List size={14} />
-              )}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ─── Empty state ─── */}
@@ -1215,26 +1214,8 @@ export default function CatalogoPage() {
       {/* ─── Loading state ─── */}
       {loading && <GridSkeleton />}
 
-      {/* ─── Grid view ─── */}
-      {!loading && filtered.length > 0 && view === "grid" && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {paginated.map((ex, i) => (
-            <BookCardGrid
-              key={ex.exemplarId}
-              exemplar={ex}
-              index={i}
-              onEdit={() => setModal({ type: "edit", exemplar: ex })}
-              onDelete={() => setDeleteTarget(ex)}
-              selected={selected.has(ex.exemplarId)}
-              onToggleSelect={() => toggleSelect(ex.exemplarId)}
-              onOpenDetail={() => setDetail(ex)}
-            />
-          ))}
-        </div>
-      )}
-
       {/* ─── List view ─── */}
-      {!loading && filtered.length > 0 && view === "list" && (
+      {!loading && filtered.length > 0 && (
         <div className="card-elevated overflow-hidden rounded-xl">
           <table className="w-full text-left">
             <thead>
@@ -1326,11 +1307,11 @@ export default function CatalogoPage() {
           </Button>
           <Button
             size="sm"
-            variant="outline"
+            variant="danger"
             disabled={bulkSaving}
-            onClick={() => setNaoEncOpen(true)}
+            onClick={() => setBulkDeleteOpen(true)}
           >
-            <XCircle size={14} /> Não encontrado
+            <Trash2 size={14} /> Excluir
           </Button>
           <button
             onClick={clearSelection}
@@ -1366,46 +1347,21 @@ export default function CatalogoPage() {
       </Dialog>
 
       {/* ─── Motivo para "não encontrado" ─── */}
+      {/* ─── Excluir selecionados ─── */}
       <Dialog
-        open={naoEncOpen}
-        onOpenChange={(open) => { if (!open) { setNaoEncOpen(false); setNaoEncObs(""); } }}
-        title="Marcar como não encontrado"
-        description={`${selected.size} exemplar${selected.size > 1 ? "es" : ""} selecionado${selected.size > 1 ? "s" : ""}`}
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => !open && setBulkDeleteOpen(false)}
+        title="Excluir selecionados"
+        description={`${selected.size} exemplar${selected.size > 1 ? "es serão excluídos" : " será excluído"} permanentemente.`}
         size="sm"
       >
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-              Motivo / observação <span style={{ color: "var(--danger)" }}>*</span>
-            </label>
-            <Textarea
-              value={naoEncObs}
-              onChange={(e) => setNaoEncObs(e.target.value)}
-              placeholder="Ex.: não localizado na estante durante o inventário"
-              rows={3}
-            />
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Obrigatória para itens não encontrados.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setNaoEncOpen(false); setNaoEncObs(""); }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={bulkSaving}
-              disabled={!naoEncObs.trim()}
-              onClick={() => bulkMark("nao_encontrado", naoEncObs.trim())}
-            >
-              Confirmar
-            </Button>
-          </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setBulkDeleteOpen(false)}>
+            Cancelar
+          </Button>
+          <Button variant="danger" size="sm" loading={bulkSaving} onClick={bulkDelete}>
+            Excluir {selected.size}
+          </Button>
         </div>
       </Dialog>
 
