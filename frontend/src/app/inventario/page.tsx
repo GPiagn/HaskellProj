@@ -100,7 +100,7 @@ export default function InventarioPage() {
 
   // Marca todos os selecionados como ENCONTRADO (sem observação)
   async function marcarEncontrados() {
-    const ids = [...selected];
+    const ids = Array.from(selected);
     if (ids.length === 0) return;
 
     setBulkSaving(true);
