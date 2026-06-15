@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Sun, Moon, Bell, Search, ChevronRight, Flame } from "lucide-react";
+import { Sun, Moon, ChevronRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 
@@ -87,43 +87,6 @@ export function Navbar({ sidebarCollapsed }: { sidebarCollapsed: boolean }) {
 
         {/* Actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Search hint */}
-          <button
-            className="hidden md:flex items-center gap-2 px-2.5 h-7 rounded-lg text-xs transition-colors"
-            style={{
-              backgroundColor: "var(--surface)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)",
-            }}
-            aria-label="Buscar"
-          >
-            <Search size={11} strokeWidth={1.8} />
-            <span>Buscar…</span>
-            <kbd
-              className="text-[9px] px-1 py-0.5 rounded font-mono"
-              style={{
-                backgroundColor: "var(--border-subtle)",
-                color: "var(--text-disabled)",
-              }}
-            >
-              ⌘K
-            </kbd>
-          </button>
-
-          {/* Notifications */}
-          <button
-            className="relative flex items-center justify-center w-7 h-7 rounded-lg transition-colors hover:bg-[var(--brand-subtle)] hover:text-[var(--brand)]"
-            style={{ color: "var(--text-secondary)" }}
-            aria-label="Notificações"
-          >
-            <Bell size={14} strokeWidth={1.8} />
-            <span
-              className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: "var(--danger)" }}
-              aria-hidden
-            />
-          </button>
-
           {/* Theme toggle */}
           {mounted && (
             <button

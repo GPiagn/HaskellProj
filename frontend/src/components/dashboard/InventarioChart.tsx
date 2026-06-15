@@ -19,6 +19,7 @@ import type { DashboardTotais, Exemplar } from "@/lib/types";
 const STATUS_COLORS = {
   encontrados: "oklch(0.50 0.13 163)", // verde / encontrados
   naoEncontrados: "oklch(0.52 0.20 18)", // vermelho / não encontrados
+  naoInventariados: "oklch(0.70 0.02 260)", // cinza / não inventariados
   atrasados: "oklch(0.70 0.15 75)", // âmbar / atrasos
 };
 
@@ -75,6 +76,11 @@ export function InventarioChart({ totais }: { totais: DashboardTotais | null }) 
           situacao: "Não encontrados",
           qtd: totais.totalNaoEncontrados,
           cor: STATUS_COLORS.naoEncontrados,
+        },
+        {
+          situacao: "Não inventariados",
+          qtd: totais.totalNaoInventariados,
+          cor: STATUS_COLORS.naoInventariados,
         },
         {
           situacao: "Atrasados",

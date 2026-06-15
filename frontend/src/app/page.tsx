@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import type { DashboardTotais } from "@/lib/types";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { InventarioChart } from "@/components/dashboard/InventarioChart";
-import { RadialProgress } from "@/components/dashboard/RadialProgress";
+import { RadialBreakdown } from "@/components/dashboard/RadialBreakdown";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
@@ -231,11 +231,36 @@ export default function DashboardPage() {
             transition={{ delay: 0.15, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-6"
           >
-            {/* Radial progress centrado */}
+            {/* Radial breakdown centrado */}
             <div className="flex flex-col items-center gap-4 py-4">
-              <RadialProgress pct={pct} size={152} loading={loading} />
+              <RadialBreakdown
+                centroPct={pct}
+                size={152}
+                loading={loading}
+                segmentos={
+                  data
+                    ? [
+                        {
+                          label: "Encontrados",
+                          value: data.totalEncontrados,
+                          color: "var(--success)",
+                        },
+                        {
+                          label: "Não encontrados",
+                          value: data.totalNaoEncontrados,
+                          color: "var(--danger)",
+                        },
+                        {
+                          label: "Não inventariados",
+                          value: data.totalNaoInventariados,
+                          color: "var(--text-muted)",
+                        },
+                      ]
+                    : []
+                }
+              />
 
-              {/* Legend below arc */}
+              {/* Legend below arc — fatias que compõem o acervo */}
               {data && (
                 <div className="w-full space-y-2 px-2">
                   <LegendRow
@@ -251,16 +276,10 @@ export default function DashboardPage() {
                     delay={0.06}
                   />
                   <LegendRow
-                    color="var(--border)"
-                    label="Pendentes"
+                    color="var(--text-muted)"
+                    label="Não inventariados"
                     value={data.totalNaoInventariados}
                     delay={0.12}
-                  />
-                  <LegendRow
-                    color="var(--warning)"
-                    label="Atrasos"
-                    value={data.totalEmprestimosAtrasados}
-                    delay={0.18}
                   />
                 </div>
               )}
