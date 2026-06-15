@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import * as XLSX from "xlsx";
+import { useEffect, useState, useMemo, ChangeEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutGrid,
@@ -17,6 +18,7 @@ import {
   CheckCircle2,
   XCircle,
   X,
+  Upload,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Exemplar, ExemplarInput } from "@/lib/types";
@@ -621,6 +623,191 @@ function ExemplarForm({
   );
 }
 
+type LinhaImport = {
+  inpCodigo: string;
+  inpTitulo: string;
+  inpAutor: string | null;
+  inpClassificacao: string | null;
+  inpTipoObra: string | null;
+  inpSituacaoSistema: string | null;
+};
+
+function ImportarPergamum({
+  open,
+  onClose,
+  existentes,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  existentes: Set<string>;
+  onDone: () => void;
+}) {
+  const [linhas, setLinhas] = useState<LinhaImport[]>([]);
+  const [importando, setImportando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  function limpar() {
+    setLinhas([]);
+    setErro("");
+  }
+
+  async function aoSelecionar(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErro("");
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        raw: false,
+        defval: "",
+      });
+
+      // Colunas (A=0): B=1, E=4, F=5, G=6, H=7, P=15, AA=26, AP=41
+      const norm = (v: unknown) => String(v ?? "").trim();
+      const parsed: LinhaImport[] = [];
+      for (const r of rows) {
+        const codigo = norm(r[1]);
+        const principal = norm(r[5]) || norm(r[6]); // título: F ou G
+        if (!codigo || !principal) continue;        // pula cabeçalhos/vazios
+
+        const sub = norm(r[7]);                       // subtítulo (H)
+        parsed.push({
+          inpCodigo: codigo,
+          inpTitulo: sub ? `${principal} : ${sub}` : principal,
+          inpAutor: norm(r[4]) || null,
+          inpClassificacao: norm(r[15]) || null,
+          inpTipoObra: norm(r[26]) || null,
+          inpSituacaoSistema: norm(r[41]) || null,
+        });
+      }
+
+      if (parsed.length === 0)
+        setErro("Não encontrei linhas válidas. Confira se é o relatório certo.");
+      setLinhas(parsed);
+    } catch {
+      setErro("Não consegui ler o arquivo. Ele é um Excel (.xlsx)?");
+      setLinhas([]);
+    }
+  }
+
+  const novos = linhas.filter((l) => !existentes.has(l.inpCodigo));
+  const jaExistem = linhas.length - novos.length;
+
+  async function importar() {
+    setImportando(true);
+    let ok = 0;
+    let falhas = 0;
+    try {
+      for (const l of novos) {
+        try {
+          await api.exemplares.create({
+            ...l,
+            inpNumeroAcervo: null,
+            inpNumeroExemplar: null,
+            inpModoAquisicao: null,
+            inpDataAquisicao: null,
+          });
+          ok++;
+        } catch {
+          falhas++;
+        }
+      }
+      toast.success(
+        `${ok} importado${ok !== 1 ? "s" : ""}`,
+        `${jaExistem} já existiam · ${falhas} com erro`
+      );
+      limpar();
+      onClose();
+      onDone();
+    } finally {
+      setImportando(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => { if (!o) { limpar(); onClose(); } }}
+      title="Importar do Pergamum"
+      size="lg"
+    >
+      <div className="space-y-4">
+        <div
+          className="text-xs leading-relaxed rounded-lg p-3"
+          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+        >
+          Anexe o relatório <strong>“Material por situação — Situação exemplar (102)”</strong> emitido
+          pelo Pergamum, em formato Excel (.xlsx). Os campos (tombo, título, autor, classificação,
+          tipo e situação) são lidos automaticamente das colunas do relatório.
+        </div>
+
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={aoSelecionar}
+          className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:text-xs file:font-medium file:cursor-pointer file:bg-[var(--surface)] file:border-[var(--border)] file:text-[var(--text-secondary)]"
+          style={{ color: "var(--text-muted)" }}
+        />
+
+        {erro && <p className="text-xs" style={{ color: "var(--danger)" }}>{erro}</p>}
+
+        {linhas.length > 0 && (
+          <>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              <strong>{linhas.length}</strong> lida{linhas.length !== 1 ? "s" : ""} ·{" "}
+              <strong style={{ color: "var(--brand)" }}>{novos.length}</strong> nova{novos.length !== 1 ? "s" : ""}
+              {jaExistem > 0 && <> · {jaExistem} já cadastrada{jaExistem !== 1 ? "s" : ""} (ignoradas)</>}
+            </div>
+
+            <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+              <div className="max-h-52 overflow-y-auto">
+                <table className="w-full text-[11px]">
+                  <thead className="sticky top-0" style={{ backgroundColor: "var(--surface)" }}>
+                    <tr style={{ color: "var(--text-muted)" }}>
+                      <th className="text-left p-2">Tombo</th>
+                      <th className="text-left p-2">Título</th>
+                      <th className="text-left p-2">Autor</th>
+                      <th className="text-left p-2">Tipo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linhas.slice(0, 50).map((l, i) => (
+                      <tr key={i} style={{ borderTop: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                        <td className="p-2 font-mono">{l.inpCodigo}</td>
+                        <td className="p-2">{l.inpTitulo}</td>
+                        <td className="p-2">{l.inpAutor ?? "—"}</td>
+                        <td className="p-2">{l.inpTipoObra ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {linhas.length > 50 && (
+              <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                Mostrando as 50 primeiras de {linhas.length}.
+              </p>
+            )}
+          </>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" size="sm" onClick={() => { limpar(); onClose(); }}>
+            Cancelar
+          </Button>
+          <Button size="sm" loading={importando} disabled={novos.length === 0} onClick={importar}>
+            Importar {novos.length || ""} exemplar{novos.length !== 1 ? "es" : ""}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 /* ─── Grid loading skeletons ─── */
 function GridSkeleton() {
   return (
@@ -644,6 +831,7 @@ const PAGE_SIZE = 30;
 
 /* ─── Main page ─── */
 export default function CatalogoPage() {
+  const [importOpen, setImportOpen] = useState(false);
   const [exemplares, setExemplares] = useState<Exemplar[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewMode>("grid");
@@ -857,6 +1045,9 @@ export default function CatalogoPage() {
         <Button size="sm" onClick={() => setModal({ type: "create" })}>
           <Plus size={13} strokeWidth={2.2} />
           Novo exemplar
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+          <Upload size={14} /> Importar do Pergamum
         </Button>
       </motion.div>
 
@@ -1304,6 +1495,14 @@ export default function CatalogoPage() {
           </div>
         )}
       </Dialog>
+
+      <ImportarPergamum
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        existentes={new Set(exemplares.map((e) => e.codigo))}
+        onDone={load}
+      />
+
 
     </div>
   );
