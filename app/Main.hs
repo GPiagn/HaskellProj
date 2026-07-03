@@ -9,6 +9,7 @@ import Database.PostgreSQL.Simple.Types
 import qualified Data.ByteString.Char8 as BS
 import System.Environment (lookupEnv)
 import Data.Maybe (fromMaybe)
+import Data.Pool (createPool, withResource) -- Adicione esta linha
 
 runMigration :: Connection -> FilePath -> IO ()
 runMigration conn fp = do
@@ -22,6 +23,13 @@ main = do
   dbUrl <- fromMaybe localConn <$> lookupEnv "DATABASE_URL"
 
   putStrLn $ "Servidor rodando na porta " ++ show port
-  conn <- connectPostgreSQL (BS.pack dbUrl)
-  runMigration conn "migration.sql"
-  run port (app conn)
+  
+  -- Cria um Pool de conexões em vez de uma conexão única
+  -- Parâmetros: ação de abrir, ação de fechar, 1 stripe, 10 segundos inativa, max 5 conexões
+  pool <- createPool (connectPostgreSQL (BS.pack dbUrl)) close 1 10 5
+
+  -- Roda a migration pegando uma conexão temporária do pool
+  withResource pool $ \conn -> runMigration conn "migration.sql"
+  
+  -- Passa o POOL para o seu app, e não mais uma conexão fixa
+  run port (app pool)

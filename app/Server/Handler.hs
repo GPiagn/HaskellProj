@@ -13,6 +13,7 @@ import Servant.API
 import Servant.Server
 import Data.Aeson                   (Value, object, (.=))
 import Data.Time                    (Day, getCurrentTime, utctDay)
+import Data.Pool                    (Pool, withResource) -- Importado corretamente
 import Database.PostgreSQL.Simple   (Connection)
 
 import Types.Exemplar
@@ -39,37 +40,38 @@ type API =
   -- Saúde
   :<|> "ping" :> Get '[JSON] Value
 
-server :: Connection -> Server API
-server conn =
-       handleListExemplares   conn
-  :<|> handleGetExemplar      conn
-  :<|> handleCreateExemplar   conn
-  :<|> handleUpdateExemplar   conn
-  :<|> handlePatchExemplar    conn
-  :<|> handleDeleteExemplar   conn
-  :<|> handleRegistrarInventario conn
-  :<|> handleRegistrarEmprestimo conn
-  :<|> handleNaoEncontrados   conn
-  :<|> handleDashboard        conn
+-- Alterado de Connection para Pool Connection
+server :: Pool Connection -> Server API
+server pool =
+       handleListExemplares   pool
+  :<|> handleGetExemplar      pool
+  :<|> handleCreateExemplar   pool
+  :<|> handleUpdateExemplar   pool
+  :<|> handlePatchExemplar    pool
+  :<|> handleDeleteExemplar   pool
+  :<|> handleRegistrarInventario pool
+  :<|> handleRegistrarEmprestimo pool
+  :<|> handleNaoEncontrados   pool
+  :<|> handleDashboard        pool
   :<|> handlePing
 
 -- ============================================================
 -- Handlers — Exemplares
 -- ============================================================
 
-handleListExemplares :: Connection -> Handler [Exemplar]
-handleListExemplares conn = liftIO (DB.listExemplares conn)
+handleListExemplares :: Pool Connection -> Handler [Exemplar]
+handleListExemplares pool = liftIO $ withResource pool $ \conn -> DB.listExemplares conn
 
-handleGetExemplar :: Connection -> Int -> Handler Exemplar
-handleGetExemplar conn eid = do
-  result <- liftIO (DB.getExemplarById conn eid)
+handleGetExemplar :: Pool Connection -> Int -> Handler Exemplar
+handleGetExemplar pool eid = do
+  result <- liftIO $ withResource pool $ \conn -> DB.getExemplarById conn eid
   case result of
     Just ex -> return ex
     Nothing -> throwError err404 { errBody = "Exemplar não encontrado" }
 
-handleCreateExemplar :: Connection -> ExemplarInput -> Handler Value
-handleCreateExemplar conn input = do
-  result <- liftIO (DB.insertExemplar conn input)
+handleCreateExemplar :: Pool Connection -> ExemplarInput -> Handler Value
+handleCreateExemplar pool input = do
+  result <- liftIO $ withResource pool $ \conn -> DB.insertExemplar conn input
   case result of
     Just newId -> return $ object
       [ "id"  .= newId
@@ -77,9 +79,9 @@ handleCreateExemplar conn input = do
       ]
     Nothing -> throwError err500 { errBody = "Erro ao criar exemplar" }
 
-handleUpdateExemplar :: Connection -> Int -> ExemplarInput -> Handler Value
-handleUpdateExemplar conn eid input = do
-  affected <- liftIO (DB.updateExemplar conn eid input)
+handleUpdateExemplar :: Pool Connection -> Int -> ExemplarInput -> Handler Value
+handleUpdateExemplar pool eid input = do
+  affected <- liftIO $ withResource pool $ \conn -> DB.updateExemplar conn eid input
   if affected > 0
     then return $ object
       [ "id"  .= eid
@@ -87,9 +89,9 @@ handleUpdateExemplar conn eid input = do
       ]
     else throwError err404 { errBody = "Exemplar não encontrado" }
 
-handleDeleteExemplar :: Connection -> Int -> Handler Value
-handleDeleteExemplar conn eid = do
-  affected <- liftIO (DB.deleteExemplar conn eid)
+handleDeleteExemplar :: Pool Connection -> Int -> Handler Value
+handleDeleteExemplar pool eid = do
+  affected <- liftIO $ withResource pool $ \conn -> DB.deleteExemplar conn eid
   if affected > 0
     then return $ object
       [ "id"  .= eid
@@ -97,9 +99,9 @@ handleDeleteExemplar conn eid = do
       ]
     else throwError err404 { errBody = "Exemplar não encontrado" }
 
-handlePatchExemplar :: Connection -> Int -> ExemplarPatch -> Handler Value
-handlePatchExemplar conn eid input = do
-  affected <- liftIO (DB.patchExemplar conn eid input)
+handlePatchExemplar :: Pool Connection -> Int -> ExemplarPatch -> Handler Value
+handlePatchExemplar pool eid input = do
+  affected <- liftIO $ withResource pool $ \conn -> DB.patchExemplar conn eid input
   if affected > 0
     then return $ object
       [ "id"  .= eid
@@ -111,12 +113,12 @@ handlePatchExemplar conn eid input = do
 -- Handlers — Inventário (regra de negócio)
 -- ============================================================
 
-handleRegistrarInventario :: Connection -> InventarioInput -> Handler Value
-handleRegistrarInventario conn (InventarioInput eid resultado obs) =
+handleRegistrarInventario :: Pool Connection -> InventarioInput -> Handler Value
+handleRegistrarInventario pool (InventarioInput eid resultado obs) =
   case validaInventario resultado obs of
     Left erro -> throwError err400 { errBody = "Erro de validação" }
     Right ()  -> do
-      affected <- liftIO (DB.registrarInventario conn eid resultado obs)
+      affected <- liftIO $ withResource pool $ \conn -> DB.registrarInventario conn eid resultado obs
       return $ object
         [ "exemplarId" .= eid
         , "resultado"  .= resultado
@@ -124,24 +126,21 @@ handleRegistrarInventario conn (InventarioInput eid resultado obs) =
         , "linhas"     .= affected
         ]
 
-handleRegistrarEmprestimo :: Connection -> EmprestimoInput -> Handler Value
-handleRegistrarEmprestimo conn (EmprestimoInput eid nome dEmp dPrev) = do
-  affected <- liftIO (DB.registrarEmprestimo conn eid nome dEmp dPrev)
+handleRegistrarEmprestimo :: Pool Connection -> EmprestimoInput -> Handler Value
+handleRegistrarEmprestimo pool (EmprestimoInput eid nome dEmp dPrev) = do
+  affected <- liftIO $ withResource pool $ \conn -> DB.registrarEmprestimo conn eid nome dEmp dPrev
   return $ object
     [ "exemplarId" .= eid
     , "msg"        .= ("Empréstimo registrado com sucesso" :: String)
     , "linhas"     .= affected
     ]
 
-handleNaoEncontrados :: Connection -> Handler [ExemplarNaoEncontrado]
-handleNaoEncontrados conn = do
-  rows <- liftIO (DB.listNaoEncontrados conn)
+handleNaoEncontrados :: Pool Connection -> Handler [ExemplarNaoEncontrado]
+handleNaoEncontrados pool = do
+  rows <- liftIO $ withResource pool $ \conn -> DB.listNaoEncontrados conn
   hoje <- liftIO (utctDay <$> getCurrentTime)
   return (map (toNaoEncontrado hoje) rows)
 
--- Função pura que converte uma linha do banco no tipo de domínio.
--- Aqui é onde a lógica de negócio aparece: se tem empréstimo associado,
--- monta o motivo "Emprestado" automaticamente com cálculo de atraso.
 toNaoEncontrado :: Day -> DB.NaoEncontradoRow -> ExemplarNaoEncontrado
 toNaoEncontrado hoje row =
   ExemplarNaoEncontrado
@@ -157,9 +156,9 @@ toNaoEncontrado hoje row =
       _ ->
         OutroMotivo (maybe "Motivo não informado" id (DB.rowObservacao row))
 
-handleDashboard :: Connection -> Handler DashboardTotais
-handleDashboard conn = do
-  (total, enc, naoEnc, atrasados) <- liftIO (DB.contarTotais conn)
+handleDashboard :: Pool Connection -> Handler DashboardTotais
+handleDashboard pool = do
+  (total, enc, naoEnc, atrasados) <- liftIO $ withResource pool $ \conn -> DB.contarTotais conn
   return DashboardTotais
     { totalExemplares           = total
     , totalEncontrados          = enc
@@ -189,5 +188,6 @@ corsPolicy = simpleCorsResourcePolicy
   , corsRequestHeaders = ["Content-Type", "Authorization"]
   }
 
-app :: Connection -> Application
-app conn = cors (const (Just corsPolicy)) (serve (Proxy @API) (server conn))
+-- Agora passa corretamente o `pool` recebido para a função `server`
+app :: Pool Connection -> Application
+app pool = cors (const (Just corsPolicy)) (serve (Proxy @API) (server pool))
