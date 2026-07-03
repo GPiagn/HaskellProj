@@ -35,6 +35,7 @@ executable HaskellProj
         bytestring,
         text,
         time,
-        mtl
+        mtl,
+        resource-pool
     hs-source-dirs:   app
     default-language: Haskell2010
