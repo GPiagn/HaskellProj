@@ -47,3 +47,9 @@ WHERE NOT EXISTS (SELECT 1 FROM exemplares WHERE codigo = '1514');
 INSERT INTO exemplares (codigo, titulo, autor, classificacao, tipo_obra)
 SELECT '6299', 'Controle motor', 'Shumway-Cook', '612.7 S5626c', 'Livro'
 WHERE NOT EXISTS (SELECT 1 FROM exemplares WHERE codigo = '6299');
+
+-- Padroniza os autores existentes (remove espaços extras e capitaliza as palavras)
+-- Ex: "MACHADO DE ASSIS" ou "machado de assis" viram "Machado De Assis"
+UPDATE exemplares 
+SET autor = INITCAP(TRIM(autor)) 
+WHERE autor IS NOT NULL;

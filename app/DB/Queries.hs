@@ -191,8 +191,8 @@ listUniqueTitulos conn = do
   rows <- query_ conn "SELECT DISTINCT titulo FROM exemplares WHERE titulo IS NOT NULL AND titulo <> '' ORDER BY titulo"
   return (map (\(Only x) -> x) rows)
 
--- Retorna a lista de números de acervo únicos salvos no banco
-listUniqueAcervos :: Connection -> IO [Int]
-listUniqueAcervos conn = do
-  rows <- query_ conn "SELECT DISTINCT numero_acervo FROM exemplares WHERE numero_acervo IS NOT NULL ORDER BY numero_acervo"
+-- Retorna a lista de autores únicos salvos no banco, já padronizados
+listUniqueAutores :: Connection -> IO [Text]
+listUniqueAutores conn = do
+  rows <- query_ conn "SELECT DISTINCT INITCAP(TRIM(autor)) FROM exemplares WHERE autor IS NOT NULL AND autor <> '' ORDER BY 1"
   return (map (\(Only x) -> x) rows)
