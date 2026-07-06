@@ -11,10 +11,11 @@ import System.Environment (lookupEnv)
 import Data.Maybe (fromMaybe)
 import Data.Pool (newPool, defaultPoolConfig)
 
+-- CORREÇÃO AQUI: Lemos o arquivo como ByteString binário bruto usando BS.readFile
 runMigration :: Connection -> FilePath -> IO ()
 runMigration conn fp = do
-  sql <- readFile fp
-  void $ execute_ conn (Query $ BS.pack sql)
+  sql <- BS.readFile fp
+  void $ execute_ conn (Query sql)
 
 main :: IO ()
 main = do
