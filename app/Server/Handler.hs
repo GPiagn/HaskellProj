@@ -64,7 +64,7 @@ server pool =
   :<|> handlePing
 
 -- ============================================================
--- Handlers — Exemplares (Usando o Pool de forma concorrente)
+-- Handlers — Exemplares (CRUD via Pool)
 -- ============================================================
 
 handleListExemplares :: Pool Connection -> Handler [Exemplar]
@@ -118,7 +118,7 @@ handlePatchExemplar pool eid input = do
     else throwError err404 { errBody = "Exemplar não encontrado" }
 
 -- ============================================================
--- Handlers — Inventário e Regras
+-- Handlers — Inventário e Regras de Negócio
 -- ============================================================
 
 handleRegistrarInventario :: Pool Connection -> InventarioInput -> Handler Value
@@ -189,7 +189,7 @@ handleListAcervos :: Pool Connection -> Handler [Int]
 handleListAcervos pool = liftIO $ withResource pool $ \conn -> DB.listUniqueAcervos conn
 
 -- ============================================================
--- Healthcheck e Inicialização do App
+-- Healthcheck
 -- ============================================================
 
 handlePing :: Handler Value
@@ -197,6 +197,10 @@ handlePing = return $ object
   [ "status" .= ("ok"         :: String)
   , "msg"    .= ("API online" :: String)
   ]
+
+-- ============================================================
+-- CORS + Inicialização do App
+-- ============================================================
 
 corsPolicy :: CorsResourcePolicy
 corsPolicy = simpleCorsResourcePolicy
