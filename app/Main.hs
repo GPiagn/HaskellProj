@@ -9,7 +9,7 @@ import Database.PostgreSQL.Simple.Types
 import qualified Data.ByteString.Char8 as BS
 import System.Environment (lookupEnv)
 import Data.Maybe (fromMaybe)
-import Data.Pool (createPool, withResource) -- Adicione esta linha
+import Data.Pool (newPool, defaultPoolConfig)
 
 runMigration :: Connection -> FilePath -> IO ()
 runMigration conn fp = do
@@ -24,12 +24,13 @@ main = do
 
   putStrLn $ "Servidor rodando na porta " ++ show port
   
-  -- Cria um Pool de conexões em vez de uma conexão única
-  -- Parâmetros: ação de abrir, ação de fechar, 1 stripe, 10 segundos inativa, max 5 conexões
-  pool <- createPool (connectPostgreSQL (BS.pack dbUrl)) close 1 10 5
+  -- 1. Cria uma conexão rápida apenas para rodar as tabelas do migration.sql
+  migrationConn <- connectPostgreSQL (BS.pack dbUrl)
+  runMigration migrationConn "migration.sql"
+  close migrationConn
 
-  -- Roda a migration pegando uma conexão temporária do pool
-  withResource pool $ \conn -> runMigration conn "migration.sql"
+  -- 2. Inicializa o Pool de conexões seguro para a concorrência da API
+  pool <- newPool (defaultPoolConfig (connectPostgreSQL (BS.pack dbUrl)) close 60 10)
   
-  -- Passa o POOL para o seu app, e não mais uma conexão fixa
+  -- 3. Inicia o Warp com o Pool configurado
   run port (app pool)

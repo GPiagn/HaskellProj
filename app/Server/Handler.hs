@@ -13,9 +13,9 @@ import Servant.API
 import Servant.Server
 import Data.Aeson                   (Value, object, (.=))
 import Data.Time                    (Day, getCurrentTime, utctDay)
-import Data.Pool                    (Pool, withResource)
 import Database.PostgreSQL.Simple   (Connection)
-import Data.Text                    (Text) -- Importado para dar suporte às novas rotas
+import Data.Pool                    (Pool, withResource)
+import Data.Text                    (Text)
 
 import Types.Exemplar
 import qualified DB.Queries as DB
@@ -45,7 +45,7 @@ type API =
   -- Saúde
   :<|> "ping" :> Get '[JSON] Value
 
--- Vincula os endpoints aos Handlers usando o Pool de Conexões
+-- Vincula os endpoints ao Pool de Conexões
 server :: Pool Connection -> Server API
 server pool =
        handleListExemplares   pool
@@ -64,7 +64,7 @@ server pool =
   :<|> handlePing
 
 -- ============================================================
--- Handlers — Exemplares
+-- Handlers — Exemplares (Usando o Pool de forma concorrente)
 -- ============================================================
 
 handleListExemplares :: Pool Connection -> Handler [Exemplar]
@@ -118,7 +118,7 @@ handlePatchExemplar pool eid input = do
     else throwError err404 { errBody = "Exemplar não encontrado" }
 
 -- ============================================================
--- Handlers — Inventário (regra de negócio)
+-- Handlers — Inventário e Regras
 -- ============================================================
 
 handleRegistrarInventario :: Pool Connection -> InventarioInput -> Handler Value
@@ -189,7 +189,7 @@ handleListAcervos :: Pool Connection -> Handler [Int]
 handleListAcervos pool = liftIO $ withResource pool $ \conn -> DB.listUniqueAcervos conn
 
 -- ============================================================
--- Healthcheck
+-- Healthcheck e Inicialização do App
 -- ============================================================
 
 handlePing :: Handler Value
@@ -197,10 +197,6 @@ handlePing = return $ object
   [ "status" .= ("ok"         :: String)
   , "msg"    .= ("API online" :: String)
   ]
-
--- ============================================================
--- CORS + Inicialização do App
--- ============================================================
 
 corsPolicy :: CorsResourcePolicy
 corsPolicy = simpleCorsResourcePolicy
