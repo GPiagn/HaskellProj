@@ -13,15 +13,16 @@ import Servant.API
 import Servant.Server
 import Data.Aeson                   (Value, object, (.=))
 import Data.Time                    (Day, getCurrentTime, utctDay)
-import Data.Pool                    (Pool, withResource) -- Importado corretamente
+import Data.Pool                    (Pool, withResource)
 import Database.PostgreSQL.Simple   (Connection)
+import Data.Text                    (Text) -- Importado para dar suporte às novas rotas
 
 import Types.Exemplar
 import qualified DB.Queries as DB
 import Business.StatusCalc
 
 -- ============================================================
--- Definição das rotas
+-- Definição das rotas da API
 -- ============================================================
 
 type API =
@@ -37,10 +38,14 @@ type API =
   :<|> "emprestimos" :> ReqBody '[JSON] EmprestimoInput :> Post '[JSON] Value
   :<|> "nao-encontrados" :> Get '[JSON] [ExemplarNaoEncontrado]
   :<|> "dashboard" :> "totais" :> Get '[JSON] DashboardTotais
+  -- Novas rotas para alimentar os Menus Suspensos (Dropdowns)
+  :<|> "autores" :> Get '[JSON] [Text]
+  :<|> "titulos" :> Get '[JSON] [Text]
+  :<|> "acervos" :> Get '[JSON] [Int]
   -- Saúde
   :<|> "ping" :> Get '[JSON] Value
 
--- Alterado de Connection para Pool Connection
+-- Vincula os endpoints aos Handlers usando o Pool de Conexões
 server :: Pool Connection -> Server API
 server pool =
        handleListExemplares   pool
@@ -53,6 +58,9 @@ server pool =
   :<|> handleRegistrarEmprestimo pool
   :<|> handleNaoEncontrados   pool
   :<|> handleDashboard        pool
+  :<|> handleListAutores      pool
+  :<|> handleListTitulos      pool
+  :<|> handleListAcervos      pool
   :<|> handlePing
 
 -- ============================================================
@@ -168,6 +176,19 @@ handleDashboard pool = do
     }
 
 -- ============================================================
+-- Handlers — Auxiliares para Menus Suspensos (Dropdowns)
+-- ============================================================
+
+handleListAutores :: Pool Connection -> Handler [Text]
+handleListAutores pool = liftIO $ withResource pool $ \conn -> DB.listUniqueAutores conn
+
+handleListTitulos :: Pool Connection -> Handler [Text]
+handleListTitulos pool = liftIO $ withResource pool $ \conn -> DB.listUniqueTitulos conn
+
+handleListAcervos :: Pool Connection -> Handler [Int]
+handleListAcervos pool = liftIO $ withResource pool $ \conn -> DB.listUniqueAcervos conn
+
+-- ============================================================
 -- Healthcheck
 -- ============================================================
 
@@ -178,7 +199,7 @@ handlePing = return $ object
   ]
 
 -- ============================================================
--- CORS + app
+-- CORS + Inicialização do App
 -- ============================================================
 
 corsPolicy :: CorsResourcePolicy
@@ -188,6 +209,5 @@ corsPolicy = simpleCorsResourcePolicy
   , corsRequestHeaders = ["Content-Type", "Authorization"]
   }
 
--- Agora passa corretamente o `pool` recebido para a função `server`
 app :: Pool Connection -> Application
 app pool = cors (const (Just corsPolicy)) (serve (Proxy @API) (server pool))

@@ -437,6 +437,7 @@ function BookRow({
 }
 
 /* ─── Exemplar form ─── */
+/* ─── Exemplar form revisado com Autocomplete ─── */
 function ExemplarForm({
   initial,
   onSubmit,
@@ -464,14 +465,45 @@ function ExemplarForm({
   const [invSituacao, setInvSituacao] = useState<string>(initial?.situacaoInventario ?? "");
   const [invObs, setInvObs] = useState<string>("");
 
+  // Estados para armazenar as sugestões carregadas do backend
+  const [autoresSugeridos, setAutoresSugeridos] = useState<string[]>([]);
+  const [titulosSugeridos, setTitulosSugeridos] = useState<string[]>([]);
+  const [acervosSugeridos, setAcervosSugeridos] = useState<number[]>([]);
+
+  // Carrega as listas exclusivas assim que o formulário é aberto (montado)
+  useEffect(() => {
+    const carregarSugestoes = async () => {
+      try {
+        // Altere para a URL correta do seu backend do Render ou localhost
+        const baseUrl = "https://haskellproj.onrender.com"; 
+
+        const [resAutores, resTitulos, resAcervos] = await Promise.all([
+          fetch(`${baseUrl}/autores`).then((res) => res.json()),
+          fetch(`${baseUrl}/titulos`).then((res) => res.json()),
+          fetch(`${baseUrl}/acervos`).then((res) => res.json()),
+        ]);
+
+        setAutoresSugeridos(resAutores || []);
+        setTitulosSugeridos(resTitulos || []);
+        setAcervosSugeridos(resAcervos || []);
+      } catch (err) {
+        console.error("Erro ao carregar sugestões para o autocomplete:", err);
+      }
+    };
+
+    carregarSugestoes();
+  }, []);
+
   const set = (k: keyof ExemplarInput, v: string) =>
     setForm((f) => ({ ...f, [k]: v || null }));
 
+  // Atualizado para aceitar o parâmetro opcional listId
   const field = (
     label: string,
     k: keyof ExemplarInput,
     required = false,
-    placeholder = ""
+    placeholder = "",
+    listId?: string
   ) => (
     <div className="space-y-1.5" key={k}>
       <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
@@ -483,6 +515,7 @@ function ExemplarForm({
         onChange={(e) => set(k, e.target.value)}
         placeholder={placeholder}
         required={required}
+        list={listId} // Vincula o input ao datalist correspondente
       />
     </div>
   );
@@ -502,7 +535,8 @@ function ExemplarForm({
     </div>
   );
 
-  const numField = (label: string, k: keyof ExemplarInput, placeholder = "") => (
+  // Atualizado para aceitar o parâmetro opcional listId
+  const numField = (label: string, k: keyof ExemplarInput, placeholder = "", listId?: string) => (
     <div className="space-y-1.5" key={k}>
       <label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>{label}</label>
       <Input
@@ -510,6 +544,7 @@ function ExemplarForm({
         value={(form[k] as number | null) ?? ""}
         onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value === "" ? null : Number(e.target.value) }))}
         placeholder={placeholder}
+        list={listId} // Vincula o input ao datalist correspondente
       />
     </div>
   );
@@ -535,12 +570,14 @@ function ExemplarForm({
         {field("Tombo", "inpCodigo", true, "ex: 1455")}
         {selectField("Tipo de material", "inpTipoObra", TIPOS_MATERIAL)}
       </div>
-      {field("Título", "inpTitulo", true, "Nome completo da obra")}
-      {field("Autor", "inpAutor", false, "Nome do autor")}
+      
+      {/* Passamos o ID das listas de sugestão nos inputs textuais */}
+      {field("Título", "inpTitulo", true, "Nome completo da obra", "titulos-sugestoes")}
+      {field("Autor", "inpAutor", false, "Nome do autor", "autores-sugestoes")}
       {field("Classificação", "inpClassificacao", false, "ex: 611.8 M1491n")}
 
       <div className="grid grid-cols-2 gap-3">
-        {numField("Nº do acervo", "inpNumeroAcervo", "ex: 12345")}
+        {numField("Nº do acervo", "inpNumeroAcervo", "ex: 12345", "acervos-sugestoes")}
         {numField("Nº do exemplar", "inpNumeroExemplar", "ex: 1")}
       </div>
 
@@ -611,6 +648,17 @@ function ExemplarForm({
           {initial?.exemplarId ? "Salvar alterações" : "Criar exemplar"}
         </Button>
       </div>
+
+      {/* ─── Tags Datalist nativas que providenciam as caixas de sugestão ─── */}
+      <datalist id="titulos-sugestoes">
+        {titulosSugeridos.map((t) => <option key={t} value={t} />)}
+      </datalist>
+      <datalist id="autores-sugestoes">
+        {autoresSugeridos.map((a) => <option key={a} value={a} />)}
+      </datalist>
+      <datalist id="acervos-sugestoes">
+        {acervosSugeridos.map((n) => <option key={n} value={String(n)} />)}
+      </datalist>
     </form>
   );
 }

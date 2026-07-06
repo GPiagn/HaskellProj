@@ -174,3 +174,25 @@ patchExemplar conn eid (ExemplarPatch c t a cl to) =
     \     tipo_obra     = COALESCE(?, tipo_obra) \
     \ WHERE id = ?"
     (c, t, a, cl, to, eid)
+
+-- ============================================================
+-- Queries Auxiliares para Menus Suspensos (Dropdowns)
+-- ============================================================
+
+-- Retorna a lista de autores únicos salvos no banco
+listUniqueAutores :: Connection -> IO [Text]
+listUniqueAutores conn = do
+  rows <- query_ conn "SELECT DISTINCT autor FROM exemplares WHERE autor IS NOT NULL AND autor <> '' ORDER BY autor"
+  return (map (\(Only x) -> x) rows)
+
+-- Retorna a lista de títulos únicos salvos no banco
+listUniqueTitulos :: Connection -> IO [Text]
+listUniqueTitulos conn = do
+  rows <- query_ conn "SELECT DISTINCT titulo FROM exemplares WHERE titulo IS NOT NULL AND titulo <> '' ORDER BY titulo"
+  return (map (\(Only x) -> x) rows)
+
+-- Retorna a lista de números de acervo únicos salvos no banco
+listUniqueAcervos :: Connection -> IO [Int]
+listUniqueAcervos conn = do
+  rows <- query_ conn "SELECT DISTINCT numero_acervo FROM exemplares WHERE numero_acervo IS NOT NULL ORDER BY numero_acervo"
+  return (map (\(Only x) -> x) rows)
