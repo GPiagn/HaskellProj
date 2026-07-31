@@ -942,7 +942,11 @@ function IncluirExemplarDialog({
     setTipoObra("");
   }, [open, linha]);
 
-  const podeSalvar = codigo.trim() !== "" && titulo.trim() !== "";
+  /* Só o tombo é obrigatório. O título pode ficar vazio: exemplares ainda
+     em processamento técnico não têm título no relatório do Pergamum.
+     Vai como string vazia (nunca null) porque inpTitulo é Text — e não
+     Maybe Text — no backend Haskell. */
+  const podeSalvar = codigo.trim() !== "";
 
   async function salvar() {
     if (!podeSalvar) return;
@@ -1006,14 +1010,21 @@ function IncluirExemplarDialog({
         <div className="space-y-4">
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             Este exemplar está no relatório de emprestados mas não existe no
-            catálogo. Preencha ao menos o título para cadastrá-lo.
+            catálogo. O tombo já é suficiente para cadastrá-lo — o título pode
+            ser preenchido depois, quando sair do processamento.
           </p>
 
           <div className="grid grid-cols-2 gap-3">
             {campo("Tombo", codigo, setCodigo, true, "ex: 1455")}
             {campo("Tipo de material", tipoObra, setTipoObra, false, "ex: Livro")}
           </div>
-          {campo("Título", titulo, setTitulo, true, "Nome completo da obra")}
+          {campo(
+            "Título",
+            titulo,
+            setTitulo,
+            false,
+            "Opcional — deixe vazio se está em processamento"
+          )}
           {campo("Autor", autor, setAutor, false, "Nome do autor")}
           {campo(
             "Classificação",

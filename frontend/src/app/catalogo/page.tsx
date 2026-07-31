@@ -33,6 +33,15 @@ import { cn } from "@/lib/utils";
 type ViewMode = "grid" | "list";
 type SortField = "titulo" | "autor" | "classificacao" | "tipoObra" | "codigo";
 
+/* Título deixou de ser obrigatório: exemplares ainda em processamento
+   técnico não têm título no relatório do Pergamum. No banco o campo é
+   NOT NULL, então guardamos string vazia — aqui trocamos por um marcador
+   visual para a lista não ficar com linhas em branco. */
+const SEM_TITULO = "Sem título";
+const temTitulo = (t: string | null | undefined) => !!t && t.trim() !== "";
+const tituloExibido = (t: string | null | undefined) =>
+  temTitulo(t) ? (t as string) : SEM_TITULO;
+
 /* ─── Cover generation ─── */
 function titleHash(s: string): number {
   let h = 0x811c9dc5;
@@ -51,7 +60,7 @@ function coverPalette(titulo: string) {
     from: `oklch(0.55 0.18 ${hue})`,
     mid:  `oklch(0.40 0.16 ${hue})`,
     to:   `oklch(0.26 0.12 ${hue2})`,
-    letter: titulo.charAt(0).toUpperCase(),
+    letter: titulo.trim() ? titulo.trim().charAt(0).toUpperCase() : "?",
     textHue: hue,
   };
 }
@@ -246,7 +255,7 @@ function BookCardGrid({
                 backgroundColor: "oklch(0.98 0 0 / 0.15)",
                 color: "oklch(0.98 0 0)",
               }}
-              aria-label={`Editar ${exemplar.titulo}`}
+              aria-label={`Editar ${tituloExibido(exemplar.titulo)}`}
             >
               <Pencil size={11} />
             </button>
@@ -257,7 +266,7 @@ function BookCardGrid({
                 backgroundColor: "oklch(0.62 0.18 18 / 0.35)",
                 color: "oklch(0.98 0 0)",
               }}
-              aria-label={`Remover ${exemplar.titulo}`}
+              aria-label={`Remover ${tituloExibido(exemplar.titulo)}`}
             >
               <Trash2 size={11} />
             </button>
@@ -267,9 +276,13 @@ function BookCardGrid({
           <div>
             <p
               className="text-xs font-semibold leading-tight line-clamp-2"
-              style={{ color: "oklch(0.97 0.01 0)" }}
+              style={{
+                color: "oklch(0.97 0.01 0)",
+                fontStyle: temTitulo(exemplar.titulo) ? "normal" : "italic",
+                opacity: temTitulo(exemplar.titulo) ? 1 : 0.7,
+              }}
             >
-              {exemplar.titulo}
+              {tituloExibido(exemplar.titulo)}
             </p>
             {exemplar.autor && (
               <p
@@ -287,9 +300,14 @@ function BookCardGrid({
       <div className="p-3 space-y-1.5" style={{ backgroundColor: "var(--surface)" }}>
         <p
           className="text-xs font-semibold leading-snug line-clamp-2 font-display"
-          style={{ color: "var(--text-primary)" }}
+          style={{
+            color: temTitulo(exemplar.titulo)
+              ? "var(--text-primary)"
+              : "var(--text-disabled)",
+            fontStyle: temTitulo(exemplar.titulo) ? "normal" : "italic",
+          }}
         >
-          {exemplar.titulo}
+          {tituloExibido(exemplar.titulo)}
         </p>
         <div className="flex items-center justify-between gap-1">
           <p className="text-[10px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
@@ -353,9 +371,14 @@ function BookRow({
       <td className="py-2.5 pr-4 max-w-xs">
         <p
           className="text-sm font-semibold font-display leading-snug line-clamp-1"
-          style={{ color: "var(--text-primary)" }}
+          style={{
+            color: temTitulo(exemplar.titulo)
+              ? "var(--text-primary)"
+              : "var(--text-disabled)",
+            fontStyle: temTitulo(exemplar.titulo) ? "normal" : "italic",
+          }}
         >
-          {exemplar.titulo}
+          {tituloExibido(exemplar.titulo)}
         </p>
         <p
           className="text-[11px] font-mono mt-0.5"
@@ -418,7 +441,7 @@ function BookRow({
             onClick={onEdit}
             className="p-1.5 rounded-md transition-colors hover:bg-[var(--brand-subtle)] hover:text-[var(--brand)]"
             style={{ color: "var(--text-muted)" }}
-            aria-label={`Editar ${exemplar.titulo}`}
+            aria-label={`Editar ${tituloExibido(exemplar.titulo)}`}
           >
             <Pencil size={13} />
           </button>
@@ -426,7 +449,7 @@ function BookRow({
             onClick={onDelete}
             className="p-1.5 rounded-md transition-colors hover:bg-[var(--danger-subtle)] hover:text-[var(--danger)]"
             style={{ color: "var(--text-muted)" }}
-            aria-label={`Remover ${exemplar.titulo}`}
+            aria-label={`Remover ${tituloExibido(exemplar.titulo)}`}
           >
             <Trash2 size={13} />
           </button>
@@ -560,9 +583,15 @@ function ExemplarForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (!form.inpCodigo || !form.inpTitulo) return;
+        if (!form.inpCodigo) return; // só o tombo é obrigatório
         if (invSituacao === "nao_encontrado" && !invObs.trim()) return;
-        onSubmit(form, { resultado: invSituacao, observacao: invObs.trim() });
+        onSubmit(
+          // inpTitulo é Text (não Maybe Text) no backend Haskell: nunca pode
+          // ir como null. O helper `set` transforma "" em null, então
+          // normalizamos aqui antes de enviar.
+          { ...form, inpTitulo: String(form.inpTitulo ?? "").trim() },
+          { resultado: invSituacao, observacao: invObs.trim() }
+        );
       }}
       className="space-y-4"
     >
@@ -572,7 +601,7 @@ function ExemplarForm({
       </div>
       
       {/* Passamos o ID das listas de sugestão nos inputs textuais */}
-      {field("Título", "inpTitulo", true, "Nome completo da obra", "titulos-sugestoes")}
+      {field("Título", "inpTitulo", false, "Opcional — vazio se em processamento", "titulos-sugestoes")}
       {field("Autor", "inpAutor", false, "Nome do autor", "autores-sugestoes")}
       {field("Classificação", "inpClassificacao", false, "ex: 611.8 M1491n")}
 
@@ -735,12 +764,14 @@ function ImportarPergamum({
       for (const r of rows.slice(1)) {
         const codigo = norm(r[1]);
         const principal = norm(r[5]) || norm(r[6]); // título: F ou G
-        if (!codigo || !principal) continue;        // pula cabeçalhos/vazios
+        if (!codigo) continue;                      // sem tombo não dá pra cadastrar
 
         const sub = norm(r[7]);                       // subtítulo (H)
         parsed.push({
           inpCodigo: codigo,
-          inpTitulo: sub ? `${principal} : ${sub}` : principal,
+          // Título vazio é permitido (exemplar em processamento). Vai como
+          // string vazia: o backend espera Text, não Maybe Text.
+          inpTitulo: principal ? (sub ? `${principal} : ${sub}` : principal) : "",
           inpAutor: norm(r[4]) || null,
           inpClassificacao: norm(r[15]) || null,
           inpTipoObra: norm(r[26]) || null,
@@ -839,7 +870,15 @@ function ImportarPergamum({
                     {linhas.slice(0, 50).map((l, i) => (
                       <tr key={i} style={{ borderTop: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                         <td className="p-2 font-mono">{l.inpCodigo}</td>
-                        <td className="p-2">{l.inpTitulo}</td>
+                        <td className="p-2">
+                          {l.inpTitulo.trim() ? (
+                            l.inpTitulo
+                          ) : (
+                            <span style={{ color: "var(--text-disabled)", fontStyle: "italic" }}>
+                              {SEM_TITULO}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2">{l.inpAutor ?? "—"}</td>
                         <td className="p-2">{l.inpTipoObra ?? "—"}</td>
                       </tr>
@@ -1380,7 +1419,7 @@ export default function CatalogoPage() {
         size="lg"
         description={
           modal?.type === "edit"
-            ? `Editando: ${modal.exemplar?.titulo}`
+            ? `Editando: ${tituloExibido(modal.exemplar?.titulo)}`
             : "Preencha as informações do exemplar"
         }
       >
@@ -1425,7 +1464,7 @@ export default function CatalogoPage() {
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
               Remover{" "}
               <strong style={{ color: "var(--text-primary)" }}>
-                {deleteTarget.titulo}
+                {tituloExibido(deleteTarget.titulo)}
               </strong>
               ? Esta ação é irreversível.
             </p>
@@ -1454,7 +1493,7 @@ export default function CatalogoPage() {
       <Dialog
         open={detail !== null}
         onOpenChange={(open) => !open && setDetail(null)}
-        title={detail?.titulo ?? "Detalhes"}
+        title={temTitulo(detail?.titulo) ? (detail!.titulo as string) : "Detalhes"}
         description={detail?.autor ?? undefined}
       >
         {detail && (
