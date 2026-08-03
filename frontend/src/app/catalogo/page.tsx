@@ -705,25 +705,96 @@ type LinhaImport = {
   inpDataAquisicao: string | null;
 };
 
+/* ─── Mesclagem na reimportação do Pergamum (funções puras) ─── */
+
+/* Um campo é "vazio" se for null/undefined ou string só de espaços.
+   Números nunca contam como vazios — inclusive o zero. */
+function campoVazio(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") return v.trim() === "";
+  return false;
+}
+
+/* Regra de mesclagem, campo a campo:
+     1. banco vazio  + relatório preenchido → relatório
+     2. banco cheio  + relatório vazio      → banco
+     3. banco cheio  + relatório preenchido → relatório (é o mais atual)
+   As três colapsam numa única condição: se o relatório trouxe valor,
+   ele prevalece; se não trouxe, preserva-se o que já está no banco. */
+function preferir<T>(doRelatorio: T | null, doBanco: T | null): T | null {
+  return campoVazio(doRelatorio) ? doBanco : doRelatorio;
+}
+
+/* Combina o registro do banco com a linha do relatório. */
+function mesclar(atual: Exemplar, rel: LinhaImport): ExemplarInput {
+  return {
+    inpCodigo: atual.codigo, // o tombo é a chave da comparação: nunca muda
+    // inpTitulo é Text (não Maybe Text) no backend: nunca pode ir como null
+    inpTitulo: preferir(rel.inpTitulo, atual.titulo) ?? "",
+    inpAutor: preferir(rel.inpAutor, atual.autor),
+    inpClassificacao: preferir(rel.inpClassificacao, atual.classificacao),
+    inpTipoObra: preferir(rel.inpTipoObra, atual.tipoObra),
+    inpSituacaoSistema: preferir(rel.inpSituacaoSistema, atual.situacaoSistema),
+    inpNumeroAcervo: preferir(rel.inpNumeroAcervo, atual.numeroAcervo),
+    inpNumeroExemplar: preferir(rel.inpNumeroExemplar, atual.numeroExemplar),
+    inpModoAquisicao: preferir(rel.inpModoAquisicao, atual.modoAquisicao),
+    inpDataAquisicao: preferir(rel.inpDataAquisicao, atual.dataAquisicao),
+  };
+}
+
+/* Nomes dos campos que a mesclagem realmente altera. Lista vazia significa
+   que o registro não mudou — e aí nem vale gastar um PUT com ele. */
+function camposAlterados(atual: Exemplar, novo: ExemplarInput): string[] {
+  const pares: [string, unknown, unknown][] = [
+    ["Título", atual.titulo ?? "", novo.inpTitulo],
+    ["Autor", atual.autor, novo.inpAutor],
+    ["Classificação", atual.classificacao, novo.inpClassificacao],
+    ["Tipo", atual.tipoObra, novo.inpTipoObra],
+    ["Situação", atual.situacaoSistema, novo.inpSituacaoSistema],
+    ["Nº acervo", atual.numeroAcervo, novo.inpNumeroAcervo],
+    ["Nº exemplar", atual.numeroExemplar, novo.inpNumeroExemplar],
+    ["Aquisição", atual.modoAquisicao, novo.inpModoAquisicao],
+    ["Data aquisição", atual.dataAquisicao, novo.inpDataAquisicao],
+  ];
+  return pares
+    .filter(([, antes, depois]) => (antes ?? null) !== (depois ?? null))
+    .map(([nome]) => nome);
+}
+
+type ItemPlano = {
+  linha: LinhaImport;
+  atual: Exemplar | null;
+  dados: ExemplarInput | null; // preenchido apenas quando status = "atualiza"
+  status: "nova" | "atualiza" | "igual";
+  campos: string[];
+};
+
 function ImportarPergamum({
   open,
   onClose,
-  existentes,
+  catalogo,
   onDone,
 }: {
   open: boolean;
   onClose: () => void;
-  existentes: Set<string>;
+  catalogo: Exemplar[];
   onDone: () => void;
 }) {
   const toast = useToast();
   const [linhas, setLinhas] = useState<LinhaImport[]>([]);
   const [importando, setImportando] = useState(false);
+  const [progresso, setProgresso] = useState(0);
   const [erro, setErro] = useState("");
+
+  const porCodigo = useMemo(
+    () => new Map(catalogo.map((e) => [e.codigo, e])),
+    [catalogo]
+  );
 
   function limpar() {
     setLinhas([]);
     setErro("");
+    setProgresso(0);
   }
 
   async function aoSelecionar(e: ChangeEvent<HTMLInputElement>) {
@@ -786,31 +857,80 @@ function ImportarPergamum({
       if (parsed.length === 0)
         setErro("Não encontrei linhas válidas. Confira se é o relatório certo.");
       setLinhas(parsed);
+      setProgresso(0);
     } catch {
       setErro("Não consegui ler o arquivo. Ele é um Excel (.xlsx)?");
       setLinhas([]);
     }
   }
 
-  const novos = linhas.filter((l) => !existentes.has(l.inpCodigo));
-  const jaExistem = linhas.length - novos.length;
+  /* Decide o destino de cada linha do relatório antes de tocar na API. */
+  const plano = useMemo<ItemPlano[]>(
+    () =>
+      linhas.map((linha) => {
+        const atual = porCodigo.get(linha.inpCodigo) ?? null;
+        if (!atual)
+          return { linha, atual: null, dados: null, status: "nova", campos: [] };
+
+        const dados = mesclar(atual, linha);
+        const campos = camposAlterados(atual, dados);
+        return campos.length
+          ? { linha, atual, dados, status: "atualiza", campos }
+          : { linha, atual, dados: null, status: "igual", campos: [] };
+      }),
+    [linhas, porCodigo]
+  );
+
+  const novos = plano.filter((p) => p.status === "nova");
+  const atualizacoes = plano.filter((p) => p.status === "atualiza");
+  const inalterados = plano.length - novos.length - atualizacoes.length;
+  const totalTrabalho = novos.length + atualizacoes.length;
+
+  /* Na prévia, o que muda aparece primeiro — as 50 primeiras linhas de um
+     relatório de 22 mil itens seriam quase todas "sem mudança". */
+  const previa = useMemo(() => {
+    const ordem = { atualiza: 0, nova: 1, igual: 2 } as const;
+    return [...plano].sort((a, b) => ordem[a.status] - ordem[b.status]);
+  }, [plano]);
 
   async function importar() {
     setImportando(true);
-    let ok = 0;
+    setProgresso(0);
+    let criados = 0;
+    let atualizados = 0;
     let falhas = 0;
     try {
-      for (const l of novos) {
+      // sequencial de propósito: o backend usa uma conexão única,
+      // então as requisições não devem ser concorrentes
+      for (const p of novos) {
         try {
-          await api.exemplares.create(l);
-          ok++;
+          await api.exemplares.create(p.linha);
+          criados++;
         } catch {
           falhas++;
         }
+        setProgresso((n) => n + 1);
       }
+      for (const p of atualizacoes) {
+        try {
+          await api.exemplares.update(p.atual!.exemplarId, p.dados!);
+          atualizados++;
+        } catch {
+          falhas++;
+        }
+        setProgresso((n) => n + 1);
+      }
+
+      const detalhe = [
+        `${inalterados} sem mudança`,
+        falhas ? `${falhas} com erro` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
       toast.success(
-        `${ok} importado${ok !== 1 ? "s" : ""}`,
-        `${jaExistem} já existiam · ${falhas} com erro`
+        `${criados} criado${criados !== 1 ? "s" : ""} · ${atualizados} atualizado${atualizados !== 1 ? "s" : ""}`,
+        detalhe
       );
       limpar();
       onClose();
@@ -823,7 +943,7 @@ function ImportarPergamum({
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => { if (!o) { limpar(); onClose(); } }}
+      onOpenChange={(o) => { if (!o && !importando) { limpar(); onClose(); } }}
       title="Importar do Pergamum"
       size="lg"
     >
@@ -833,14 +953,16 @@ function ImportarPergamum({
           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
         >
           Anexe o relatório <strong>“Material por situação — Situação exemplar (102)”</strong> emitido
-          pelo Pergamum, em formato Excel (.xlsx). Os campos (tombo, título, autor, classificação,
-          tipo e situação) são lidos automaticamente das colunas do relatório.
+          pelo Pergamum, em formato Excel (.xlsx). Tombos novos são cadastrados; tombos
+          que já existem têm os campos <strong>atualizados pelo relatório</strong>, e o que
+          o relatório não trouxer preenchido é mantido como está no sistema.
         </div>
 
         <input
           type="file"
           accept=".xlsx,.xls"
           onChange={aoSelecionar}
+          disabled={importando}
           className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:text-xs file:font-medium file:cursor-pointer file:bg-[var(--surface)] file:border-[var(--border)] file:text-[var(--text-secondary)]"
           style={{ color: "var(--text-muted)" }}
         />
@@ -849,10 +971,19 @@ function ImportarPergamum({
 
         {linhas.length > 0 && (
           <>
-            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              <strong>{linhas.length}</strong> lida{linhas.length !== 1 ? "s" : ""} ·{" "}
-              <strong style={{ color: "var(--brand)" }}>{novos.length}</strong> nova{novos.length !== 1 ? "s" : ""}
-              {jaExistem > 0 && <> · {jaExistem} já cadastrada{jaExistem !== 1 ? "s" : ""} (ignoradas)</>}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+              <span>
+                <strong>{linhas.length}</strong> lida{linhas.length !== 1 ? "s" : ""}
+              </span>
+              <span style={{ color: "var(--brand)" }}>
+                <strong>{novos.length}</strong> nova{novos.length !== 1 ? "s" : ""}
+              </span>
+              <span style={{ color: "var(--warning, var(--brand))" }}>
+                <strong>{atualizacoes.length}</strong> a atualizar
+              </span>
+              <span style={{ color: "var(--text-muted)" }}>
+                {inalterados} sem mudança
+              </span>
             </div>
 
             <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
@@ -863,44 +994,85 @@ function ImportarPergamum({
                       <th className="text-left p-2">Tombo</th>
                       <th className="text-left p-2">Título</th>
                       <th className="text-left p-2">Autor</th>
-                      <th className="text-left p-2">Tipo</th>
+                      <th className="text-left p-2">O que acontece</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {linhas.slice(0, 50).map((l, i) => (
+                    {previa.slice(0, 50).map((p, i) => (
                       <tr key={i} style={{ borderTop: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-                        <td className="p-2 font-mono">{l.inpCodigo}</td>
+                        <td className="p-2 font-mono">{p.linha.inpCodigo}</td>
                         <td className="p-2">
-                          {l.inpTitulo.trim() ? (
-                            l.inpTitulo
+                          {p.linha.inpTitulo.trim() ? (
+                            p.linha.inpTitulo
                           ) : (
                             <span style={{ color: "var(--text-disabled)", fontStyle: "italic" }}>
                               {SEM_TITULO}
                             </span>
                           )}
                         </td>
-                        <td className="p-2">{l.inpAutor ?? "—"}</td>
-                        <td className="p-2">{l.inpTipoObra ?? "—"}</td>
+                        <td className="p-2">{p.linha.inpAutor ?? "—"}</td>
+                        <td className="p-2">
+                          {p.status === "nova" && (
+                            <Badge variant="success" className="text-[9px]">Cadastrar</Badge>
+                          )}
+                          {p.status === "atualiza" && (
+                            <span className="inline-flex flex-wrap items-center gap-1">
+                              <Badge variant="outline" className="text-[9px]">Atualizar</Badge>
+                              <span style={{ color: "var(--text-muted)" }}>
+                                {p.campos.join(", ")}
+                              </span>
+                            </span>
+                          )}
+                          {p.status === "igual" && (
+                            <span style={{ color: "var(--text-disabled)" }}>Sem mudança</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-            {linhas.length > 50 && (
+            {previa.length > 50 && (
               <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                Mostrando as 50 primeiras de {linhas.length}.
+                Mostrando as 50 primeiras de {previa.length} — alterações no topo.
               </p>
+            )}
+
+            {importando && totalTrabalho > 0 && (
+              <div className="space-y-1">
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "var(--surface)" }}>
+                  <div
+                    className="h-full transition-all"
+                    style={{
+                      width: `${Math.round((progresso / totalTrabalho) * 100)}%`,
+                      backgroundColor: "var(--brand)",
+                    }}
+                  />
+                </div>
+                <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {progresso} de {totalTrabalho} enviados — não feche a janela.
+                </p>
+              </div>
             )}
           </>
         )}
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" size="sm" onClick={() => { limpar(); onClose(); }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={importando}
+            onClick={() => { limpar(); onClose(); }}
+          >
             Cancelar
           </Button>
-          <Button size="sm" loading={importando} disabled={novos.length === 0} onClick={importar}>
-            Importar {novos.length || ""} exemplar{novos.length !== 1 ? "es" : ""}
+          <Button size="sm" loading={importando} disabled={totalTrabalho === 0} onClick={importar}>
+            {novos.length > 0 && atualizacoes.length > 0
+              ? `Cadastrar ${novos.length} e atualizar ${atualizacoes.length}`
+              : atualizacoes.length > 0
+                ? `Atualizar ${atualizacoes.length} exemplar${atualizacoes.length !== 1 ? "es" : ""}`
+                : `Cadastrar ${novos.length || ""} exemplar${novos.length !== 1 ? "es" : ""}`}
           </Button>
         </div>
       </div>
@@ -1542,7 +1714,7 @@ export default function CatalogoPage() {
       <ImportarPergamum
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        existentes={new Set(exemplares.map((e) => e.codigo))}
+        catalogo={exemplares}
         onDone={load}
       />
 
