@@ -1109,6 +1109,7 @@ export default function CatalogoPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [tipoFilter, setTipoFilter] = useState<string>("");
+  const [sitFilter, setSitFilter] = useState<string>("");
   const [invFilter, setInvFilter] = useState<string>("");
   const [sortBy, setSortBy] = useState<SortField>("titulo");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -1149,6 +1150,21 @@ export default function CatalogoPage() {
     [exemplares]
   );
 
+  /* Situações do exemplar presentes no acervo (campo situacaoSistema, que vem
+     do Pergamum: Normal, Emprestado, Consulta local...). A lista é montada a
+     partir dos próprios dados para não ficar desatualizada quando o relatório
+     trouxer um valor novo. Não confundir com situacaoInventario, filtrado
+     logo ao lado. */
+  const situacoes = useMemo(
+    () =>
+      (
+        Array.from(
+          new Set(exemplares.map((e) => e.situacaoSistema).filter(Boolean))
+        ) as string[]
+      ).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })),
+    [exemplares]
+  );
+
   const filtered = useMemo(() => {
     let list = exemplares;
 
@@ -1166,6 +1182,15 @@ export default function CatalogoPage() {
     // 2) filtro por tipo
     if (tipoFilter) {
       list = list.filter((e) => e.tipoObra === tipoFilter);
+    }
+
+    // filtro por situação do exemplar (situacaoSistema)
+    if (sitFilter) {
+      list = list.filter((e) =>
+        sitFilter === "sem_situacao"
+          ? !e.situacaoSistema
+          : e.situacaoSistema === sitFilter
+      );
     }
 
     // filtro por situação de inventário
@@ -1191,7 +1216,7 @@ export default function CatalogoPage() {
     });
 
     return list;
-  }, [exemplares, search, tipoFilter, invFilter, sortBy, sortDir]);
+  }, [exemplares, search, tipoFilter, sitFilter, invFilter, sortBy, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
@@ -1373,6 +1398,25 @@ export default function CatalogoPage() {
           {tipos.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
+        </select>
+
+        {/* Filtro por situação do exemplar */}
+        <select
+          value={sitFilter}
+          onChange={(e) => { setSitFilter(e.target.value); setPage(1); }}
+          className="h-9 px-2.5 text-sm rounded-lg outline-none cursor-pointer"
+          style={{
+            backgroundColor: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+          }}
+          aria-label="Filtrar por situação do exemplar"
+        >
+          <option value="">Toda situação do exemplar</option>
+          {situacoes.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+          <option value="sem_situacao">Sem situação</option>
         </select>
 
         {/* Filtro por situação de inventário */}
